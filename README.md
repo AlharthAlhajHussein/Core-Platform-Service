@@ -5,7 +5,7 @@
 - **Python 3.13** (via Conda recommended)
 - **Docker & Docker Compose** (for Redis and PostgreSQL)
 - **UV** package manager
-- **API Keys**: Google Gemini API Key & GCP Service Account credentials (for Pub/Sub & Cloud Storage)
+- **API Keys**: GCP Service Account credentials (for Cloud Storage)
 
 ---
 
@@ -20,7 +20,7 @@ cp .env.example .env
 ### 2. Create and Activate Conda Environment
 ```bash
 conda create -n core-platform-env python=3.13 uv -c conda-forge
-conda activate acore-platform-env
+conda activate core-platform-env
 ```
 
 ### 3. Install Dependencies
