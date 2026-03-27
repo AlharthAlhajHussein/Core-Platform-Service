@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from helpers.config import settings
 from helpers.database import AsyncSessionLocal
-from helpers.security import is_token_blocklisted
+from helpers.redis_client import is_blocklisted, is_token_blocked
 from models.users import User
 from models.company_users import CompanyUser, RoleEnum
 from models.agents import Agent
@@ -19,6 +19,7 @@ from models.employee_agents import EmployeeAgent
 from models.knowledge_bucket_registry import KnowledgeBucketRegistry
 from models.section_users import SectionUser
 from views.auth_schemas import TokenPayload
+from fastapi import Header
 
 # OAuth2PasswordBearer is used to extract the token from the Authorization header
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -42,6 +43,14 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    # 1. Check if the specific token is blocklisted (e.g., user logged out this session)
+    if await is_token_blocked(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         # Decode the JWT token
         payload = jwt.decode(
@@ -52,8 +61,8 @@ async def get_current_user(
     except (JWTError, ValidationError):
         raise credentials_exception
 
-    # Check if the user is blocklisted (e.g., after logout or role change)
-    if await is_token_blocklisted(token_data.sub):
+    # 2. Check if the user is globally blocklisted (e.g., suspended by admin)
+    if await is_blocklisted(token_data.sub):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked",
@@ -190,7 +199,20 @@ async def can_access_kb(
             Agent.company_id == UUID(current_user.current_company_id) # Ensure multi-tenancy for the agent
         )
         result = await db.execute(query)
-        return kb
+        if result.scalars().first():
+            return kb
 
     # 5. If no permissions match, deny access
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this knowledge bucket.")
+
+
+async def verify_internal_secret(x_internal_secret: Annotated[str | None, Header()] = None):
+    """
+    Dependency to verify the static secret for internal service-to-service communication.
+    """
+    # Edge Case: Handle both missing header and incorrect secret value.
+    if not x_internal_secret or x_internal_secret != settings.internal_secret:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing X-Internal-Secret header."
+        )
