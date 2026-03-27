@@ -30,3 +30,20 @@ async def is_blocklisted(user_id: UUID) -> bool:
     """Checks if a user's ID is in the JWT blocklist."""
     client = await get_redis_client()
     return await client.sismember("jwt_blocklist", str(user_id))
+
+async def delete_agent_config_cache(agent_id: UUID) -> None:
+    """Deletes the cached configuration for a specific agent."""
+    client = await get_redis_client()
+    # This key format must match what the Gateway and Orchestrator services use for caching.
+    await client.delete(f"agent_config:{str(agent_id)}")
+
+async def block_token(token: str, ttl: int) -> None:
+    """Adds a specific token to the blocklist with a Time-To-Live (TTL)."""
+    if ttl > 0:
+        client = await get_redis_client()
+        await client.setex(f"token_blocklist:{token}", ttl, "true")
+
+async def is_token_blocked(token: str) -> bool:
+    """Checks if a specific token is in the blocklist."""
+    client = await get_redis_client()
+    return await client.exists(f"token_blocklist:{token}") > 0

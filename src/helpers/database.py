@@ -23,8 +23,4 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
-async def get_db() -> AsyncSession:
-    """Dependency that provides a database session."""
-    async with AsyncSessionLocal() as session:
-        yield session
         
