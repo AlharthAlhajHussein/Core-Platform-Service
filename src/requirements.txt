@@ -10,5 +10,8 @@ alembic==1.18.4
 google-cloud-storage==3.9.0
 redis==7.3.0
 cryptography==46.0.6
+bcrypt==5.0.0
 python-jose==3.5.0
 passlib==1.7.4
+sqlalchemy-upsert-kit==0.1.1
+email-validator==2.3.0
