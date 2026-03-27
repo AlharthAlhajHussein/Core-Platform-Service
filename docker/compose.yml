@@ -1,0 +1,50 @@
+services:
+
+  # 1. PostgreSQL
+  postgres_core:
+    image: pgvector/pgvector:0.8.2-pg18-trixie
+    container_name: core_platform_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${db_user}
+      POSTGRES_PASSWORD: ${db_password}
+      POSTGRES_DB: ${db_name}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    networks:
+      - backend_private_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $db_user -d $db_name"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # 2. Redis (Cache)
+  redis:
+    image: redis:8.6.1-trixie
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${redis_password}
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend_private_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${redis_password}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:
+  postgres_data:
+
+networks:
+  backend_private_network:
+    driver: bridge
+    
