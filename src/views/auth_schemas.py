@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr
 import uuid
+from pydantic import BaseModel, EmailStr
 from models.company_users import RoleEnum
 
 class Token(BaseModel):
@@ -28,3 +28,10 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class NewAccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
