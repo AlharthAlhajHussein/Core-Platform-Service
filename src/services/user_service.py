@@ -1,0 +1,129 @@
+from uuid import UUID
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from fastapi import HTTPException, status
+
+from models import User, CompanyUser, SectionUser, Section
+from models.company_users import RoleEnum
+from views.user_schemas import UserCreateRequest
+from helpers.security import get_password_hash
+from helpers.redis_client import add_to_blocklist
+
+class UserService:
+    async def create_user(
+        self, db: AsyncSession, current_user: User, user_data: UserCreateRequest
+    ) -> dict:
+        # 1. Enforcement checks based on role
+        if current_user.current_role == RoleEnum.EMPLOYEE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot create users.")
+        
+        if current_user.current_role == RoleEnum.SUPERVISOR and user_data.role != RoleEnum.EMPLOYEE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supervisors can only create Employees.")
+
+        # Supervisors MUST assign the new employee to a section they manage
+        if current_user.current_role == RoleEnum.SUPERVISOR:
+            if not user_data.section_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Supervisors must assign new employees to a section.")
+            sec_check = await db.execute(
+                select(SectionUser).filter(
+                    SectionUser.user_id == current_user.id, SectionUser.section_id == user_data.section_id
+                )
+            )
+            if not sec_check.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage the specified section.")
+
+        # Enforce multi-tenancy on the requested section (if provided)
+        if user_data.section_id:
+            section = await db.get(Section, user_data.section_id)
+            if not section or str(section.company_id) != current_user.current_company_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found in your company.")
+
+        # 2. Find-or-Create the global User record. This is the core of the "invite" logic.
+        result = await db.execute(select(User).filter(User.email == user_data.email))
+        target_user = result.scalar_one_or_none()
+
+        if target_user:
+            # User already exists globally. Check if they are already in THIS company.
+            company_id = UUID(current_user.current_company_id)
+            existing_link_result = await db.execute(
+                select(CompanyUser).filter(
+                    CompanyUser.user_id == target_user.id,
+                    CompanyUser.company_id == company_id
+                )
+            )
+            if existing_link_result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="User with this email is already a member of this company."
+                )
+            # User exists, but not in this company. We will proceed to link them.
+        else:
+            # User does not exist globally. Create them.
+            target_user = User(
+                email=user_data.email,
+                hashed_password=get_password_hash(user_data.password)
+            )
+            db.add(target_user)
+            await db.flush() # Gets the UUID generated without fully committing
+
+        # 3. Link the (new or existing) User to the Company
+        company_user = CompanyUser(
+            user_id=target_user.id,
+            company_id=UUID(current_user.current_company_id),
+            role=user_data.role
+        )
+        db.add(company_user)
+
+        # 4. Link User to the Section (if provided)
+        if user_data.section_id:
+            section_user = SectionUser(user_id=target_user.id, section_id=user_data.section_id)
+            db.add(section_user)
+
+        await db.commit()
+        
+        return {"id": target_user.id, "email": target_user.email, "role": user_data.role}
+
+    async def update_user_role(
+        self, db: AsyncSession, current_user: User, target_user_id: UUID, new_role: RoleEnum
+    ) -> dict:
+        # Verify target is in the same company
+        cu_record = await db.execute(
+            select(CompanyUser).filter(
+                CompanyUser.user_id == target_user_id, CompanyUser.company_id == UUID(current_user.current_company_id)
+            )
+        )
+        company_user = cu_record.scalar_one_or_none()
+        if not company_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in your company.")
+
+        if company_user.role != new_role:
+            company_user.role = new_role
+            await db.commit()
+            # Note: We do NOT add them to the global Redis blocklist here, as that would permanently ban them.
+            # Their current access token will expire within an hour. Upon their next /refresh, 
+            # the system will naturally issue a new token containing their updated role.
+
+        return {"status": "role_updated", "new_role": new_role}
+
+    async def remove_user_from_company(
+        self, db: AsyncSession, current_user: User, target_user_id: UUID
+    ):
+        cu_record = await db.execute(
+            select(CompanyUser).filter(
+                CompanyUser.user_id == target_user_id, CompanyUser.company_id == UUID(current_user.current_company_id)
+            )
+        )
+        company_user = cu_record.scalar_one_or_none()
+        
+        if not company_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in your company.")
+        if current_user.id == target_user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove yourself.")
+
+        # Delete the relationship, revoking their access to this tenant.
+        await db.delete(company_user)
+        await db.commit()
+
+        # Note: Global blocklisting is avoided here so we don't accidentally lock the user out of other companies they might belong to.
+
+user_service = UserService()
