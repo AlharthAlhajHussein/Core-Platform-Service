@@ -7,3 +7,4 @@ from .billing import UsageLog
 from .users import User
 from .company_users import CompanyUser
 from .companies import Company
+from .section_users import SectionUser
