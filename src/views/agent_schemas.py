@@ -1,35 +1,38 @@
 import uuid
 from pydantic import BaseModel, Field
-from typing import Optional
 
-class AgentBase(BaseModel):
-    name: str = Field(..., min_length=3, max_length=100, description="The public name of the agent.")
-    system_prompt: str = Field(..., min_length=10, description="The core instruction or persona for the AI.")
-    model_type: str = "gemini-2.5-flash"
-    temperature: float = Field(0.7, ge=0.0, le=1.0, description="Controls the creativity of the AI's responses.")
-    is_active: bool = True
-    section_id: uuid.UUID
-    knowledge_bucket_id: Optional[uuid.UUID] = None
+class AgentCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    system_prompt: str = Field(..., description="The underlying persona and rules for the AI.")
+    section_id: uuid.UUID = Field(..., description="The section this agent belongs to.")
+    model_type: str = Field("gemini-2.5-flash", description="The LLM model to use.")
+    temperature: float = Field(0.1, ge=0.0, le=2.0)
+    whatsapp_token: str | None = Field(None, description="Raw Meta API token (will be encrypted).")
+    telegram_token: str | None = Field(None, description="Raw Telegram bot token (will be encrypted).")
 
-class AgentCreate(AgentBase):
-    # These fields are for creation only and are not stored directly. They are encrypted.
-    whatsapp_token: Optional[str] = None
-    telegram_token: Optional[str] = None
+class AgentUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=100)
+    system_prompt: str | None = None
+    model_type: str | None = None
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    is_active: bool | None = None
+    knowledge_bucket_registry_id: uuid.UUID | None = None
+    whatsapp_token: str | None = Field(None, description="Provide a new token to update, or empty string to clear.")
+    telegram_token: str | None = Field(None, description="Provide a new token to update, or empty string to clear.")
 
-class AgentUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=3, max_length=100)
-    system_prompt: Optional[str] = Field(None, min_length=10)
-    model_type: Optional[str] = None
-    temperature: Optional[float] = Field(None, ge=0.0, le=1.0)
-    is_active: Optional[bool] = None
-    section_id: Optional[uuid.UUID] = None
-    knowledge_bucket_id: Optional[uuid.UUID] = None
-    whatsapp_token: Optional[str] = None
-    telegram_token: Optional[str] = None
-
-class AgentResponse(AgentBase):
+class AgentResponse(BaseModel):
     id: uuid.UUID
     company_id: uuid.UUID
+    section_id: uuid.UUID
+    name: str
+    system_prompt: str | None = None
+    model_type: str | None = None
+    temperature: float | None = None
+    is_active: bool | None = None
+    # Encrypted tokens are explicitly EXCLUDED from the response for security.
 
     class Config:
         from_attributes = True
+
+class AgentEmployeeAssignRequest(BaseModel):
+    user_id: uuid.UUID
