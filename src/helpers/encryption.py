@@ -1,21 +1,20 @@
-from cryptography.fernet import Fernet, InvalidToken
-from helpers import settings
+from cryptography.fernet import Fernet
+from helpers.config import settings
 
-fernet = Fernet(settings.fernet_key)
+if not settings.fernet_key:
+    raise ValueError("FERNET_KEY must be set in the environment variables (e.g. .env).")
 
-def encrypt_data(data: str | None) -> str | None:
-    """Encrypts a string using Fernet."""
-    if data is None:
-        return None
-    return fernet.encrypt(data.encode('utf-8')).decode('utf-8')
+# Initialize Fernet directly with the dedicated key from settings
+_fernet = Fernet(settings.fernet_key)
 
-def decrypt_data(encrypted_data: str | None) -> str | None:
+def encrypt(data: str) -> str:
+    """Encrypts a string using Fernet (symmetric encryption)."""
+    if not data:
+        return data
+    return _fernet.encrypt(data.encode()).decode()
+
+def decrypt(data: str) -> str:
     """Decrypts a Fernet-encrypted string."""
-    if encrypted_data is None:
-        return None
-    try:
-        return fernet.decrypt(encrypted_data.encode('utf-8')).decode('utf-8')
-    except InvalidToken:
-        # Handle cases where the token is malformed or invalid
-        # This is a critical edge case for data integrity
-        return None
+    if not data:
+        return data
+    return _fernet.decrypt(data.encode()).decode()

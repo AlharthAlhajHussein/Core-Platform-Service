@@ -18,17 +18,18 @@ class Settings(BaseSettings):
     redis_password: str | None
 
     # Security
-    secret_key: str | None = "secret_key"
+    secret_key: str | None = None
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
 
     # Encryption
+    # Run this command to generate key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     fernet_key: bytes | None = None
 
     # Internal Services
-    rag_service_url: str | None = None
-    internal_secret: str | None = None
+    rag_service_url: str | None
+    internal_secret: str | None 
 
     model_config = SettingsConfigDict(env_file=".env")
 
