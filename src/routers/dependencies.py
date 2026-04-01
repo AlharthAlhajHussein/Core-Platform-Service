@@ -18,6 +18,7 @@ from models.agents import Agent
 from models.employee_agents import EmployeeAgent
 from models.knowledge_bucket_registry import KnowledgeBucketRegistry
 from models.section_users import SectionUser
+from models.conversations import Conversation
 from views.auth_schemas import TokenPayload
 from fastapi import Header
 
@@ -205,6 +206,42 @@ async def can_access_kb(
     # 5. If no permissions match, deny access
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this knowledge bucket.")
 
+
+async def can_access_conversation(
+    conv_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> Conversation:
+    """
+    Verifies if the current user has access to a specific conversation thread.
+    """
+    result = await db.execute(select(Conversation).filter(Conversation.id == conv_id))
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    if current_user.is_platform_admin:
+        return conv
+    if str(conv.company_id) != current_user.current_company_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access forbidden")
+
+    role = current_user.current_role
+    if role == RoleEnum.OWNER:
+        return conv
+
+    agent = await db.get(Agent, conv.agent_id)
+    
+    if role == RoleEnum.SUPERVISOR:
+        su_check = await db.execute(select(SectionUser).filter(SectionUser.user_id == current_user.id, SectionUser.section_id == agent.section_id))
+        if su_check.scalar_one_or_none():
+            return conv
+            
+    if role == RoleEnum.EMPLOYEE:
+        ea_check = await db.execute(select(EmployeeAgent).filter(EmployeeAgent.employee_id == current_user.id, EmployeeAgent.agent_id == agent.id))
+        if ea_check.scalar_one_or_none():
+            return conv
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No permission to access this conversation")
 
 async def verify_internal_secret(x_internal_secret: Annotated[str | None, Header()] = None):
     """
