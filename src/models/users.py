@@ -7,6 +7,8 @@ class User(BaseModel):
 
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
+    first_name = Column(String(100), nullable=False, server_default="")
+    last_name = Column(String(100), nullable=False, server_default="")
     
     # "God Mode" switch for your internal tech team
     is_platform_admin = Column(Boolean, default=False, nullable=False)
