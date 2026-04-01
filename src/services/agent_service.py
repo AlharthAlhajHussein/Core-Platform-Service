@@ -53,6 +53,34 @@ class AgentService:
         await db.refresh(new_agent)
         return new_agent
 
+    async def list_agents(
+        self, db: AsyncSession, current_user: User, 
+        section_id: UUID | None = None, user_id: UUID | None = None
+    ) -> list[Agent]:
+        
+        # Base query: Only agents in the current user's company
+        stmt = select(Agent).where(Agent.company_id == UUID(current_user.current_company_id))
+
+        if current_user.current_role == RoleEnum.OWNER:
+            if section_id:
+                stmt = stmt.where(Agent.section_id == section_id)
+            if user_id:
+                stmt = stmt.join(EmployeeAgent, Agent.id == EmployeeAgent.agent_id).where(EmployeeAgent.employee_id == user_id)
+                
+        elif current_user.current_role == RoleEnum.SUPERVISOR:
+            # Restrict to sections managed by this supervisor
+            managed_sections = select(SectionUser.section_id).where(SectionUser.user_id == current_user.id)
+            stmt = stmt.where(Agent.section_id.in_(managed_sections))
+            if user_id:
+                stmt = stmt.join(EmployeeAgent, Agent.id == EmployeeAgent.agent_id).where(EmployeeAgent.employee_id == user_id)
+                
+        elif current_user.current_role == RoleEnum.EMPLOYEE:
+            # Employees can only see agents explicitly assigned to them (filters are ignored)
+            stmt = stmt.join(EmployeeAgent, Agent.id == EmployeeAgent.agent_id).where(EmployeeAgent.employee_id == current_user.id)
+
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
     async def assign_employee(self, db: AsyncSession, current_user: User, agent_id: UUID, target_user_id: UUID):
         """Assigns an employee to an agent, giving them permission to update its config."""
         if current_user.current_role == RoleEnum.EMPLOYEE:

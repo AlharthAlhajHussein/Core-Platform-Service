@@ -9,6 +9,7 @@ from models.users import User
 from models.company_users import RoleEnum
 from models.section_users import SectionUser
 from models.agents import Agent
+from models.employee_agents import EmployeeAgent
 from views.kb_schemas import KnowledgeBucketCreate
 from services.rag_proxy_service import rag_proxy_service
 
@@ -88,5 +89,36 @@ class KnowledgeBucketService:
         
         await db.delete(kb)
         await db.commit()
+
+    async def list_buckets(
+        self, db: AsyncSession, current_user: User, section_id: UUID | None = None
+    ) -> list[KnowledgeBucketRegistry]:
+        
+        # Base query: Only buckets in the current user's company
+        stmt = select(KnowledgeBucketRegistry).where(KnowledgeBucketRegistry.company_id == UUID(current_user.current_company_id))
+
+        if current_user.current_role == RoleEnum.OWNER:
+            if section_id:
+                stmt = stmt.where(KnowledgeBucketRegistry.section_id == section_id)
+                
+        elif current_user.current_role == RoleEnum.SUPERVISOR:
+            # Restrict to sections managed by this supervisor
+            managed_sections = select(SectionUser.section_id).where(SectionUser.user_id == current_user.id)
+            stmt = stmt.where(KnowledgeBucketRegistry.section_id.in_(managed_sections))
+            
+        elif current_user.current_role == RoleEnum.EMPLOYEE:
+            # Employees only see KBs that are linked to agents they are explicitly assigned to manage
+            assigned_agents_kbs = (
+                select(Agent.knowledge_bucket_id)
+                .join(EmployeeAgent, Agent.id == EmployeeAgent.agent_id)
+                .where(
+                    EmployeeAgent.employee_id == current_user.id,
+                    Agent.knowledge_bucket_id.is_not(None) # Only agents that actually have a KB
+                )
+            )
+            stmt = stmt.where(KnowledgeBucketRegistry.id.in_(assigned_agents_kbs))
+
+        result = await db.execute(stmt)
+        return result.scalars().all()
 
 knowledge_bucket_service = KnowledgeBucketService()

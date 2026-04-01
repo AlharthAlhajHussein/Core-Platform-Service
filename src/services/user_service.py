@@ -61,7 +61,9 @@ class UserService:
             # User does not exist globally. Create them.
             target_user = User(
                 email=user_data.email,
-                hashed_password=get_password_hash(user_data.password)
+                hashed_password=get_password_hash(user_data.password),
+                first_name=user_data.first_name,
+                last_name=user_data.last_name
             )
             db.add(target_user)
             await db.flush() # Gets the UUID generated without fully committing
@@ -81,7 +83,13 @@ class UserService:
 
         await db.commit()
         
-        return {"id": target_user.id, "email": target_user.email, "role": user_data.role}
+        return {
+            "id": target_user.id, 
+            "email": target_user.email, 
+            "first_name": target_user.first_name,
+            "last_name": target_user.last_name,
+            "role": user_data.role
+        }
 
     async def update_user_role(
         self, db: AsyncSession, current_user: User, target_user_id: UUID, new_role: RoleEnum
@@ -125,5 +133,53 @@ class UserService:
         await db.commit()
 
         # Note: Global blocklisting is avoided here so we don't accidentally lock the user out of other companies they might belong to.
+
+    async def list_users(self, db: AsyncSession, current_user: User, section_id: UUID | None = None) -> list[dict]:
+        # 1. Block employees entirely from viewing user lists
+        if current_user.current_role == RoleEnum.EMPLOYEE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot view user lists.")
+
+        # 2. Base query: Get users in the same company
+        stmt = select(User, CompanyUser.role).join(CompanyUser, User.id == CompanyUser.user_id)
+        stmt = stmt.where(CompanyUser.company_id == UUID(current_user.current_company_id))
+
+        # 3. Apply RBAC Filters
+        if current_user.current_role == RoleEnum.SUPERVISOR:
+            # Supervisors can ONLY see Employees
+            stmt = stmt.where(CompanyUser.role == RoleEnum.EMPLOYEE)
+            
+            if section_id:
+                # Verify the supervisor actually manages this specific section
+                su_check = await db.execute(select(SectionUser).filter(SectionUser.user_id == current_user.id, SectionUser.section_id == section_id))
+                if not su_check.scalar_one_or_none():
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this section.")
+                stmt = stmt.join(SectionUser, User.id == SectionUser.user_id).where(SectionUser.section_id == section_id)
+            else:
+                # If no section is specified, show employees across ALL sections this supervisor manages
+                managed_sections = select(SectionUser.section_id).where(SectionUser.user_id == current_user.id)
+                stmt = stmt.join(SectionUser, User.id == SectionUser.user_id).where(SectionUser.section_id.in_(managed_sections))
+
+        elif current_user.current_role == RoleEnum.OWNER:
+            # Owners see all Supervisors and Employees
+            stmt = stmt.where(CompanyUser.role.in_([RoleEnum.SUPERVISOR, RoleEnum.EMPLOYEE]))
+            if section_id:
+                stmt = stmt.join(SectionUser, User.id == SectionUser.user_id).where(SectionUser.section_id == section_id)
+
+        result = await db.execute(stmt)
+        rows = result.all()
+
+        # 4. Deduplicate users (in case an employee is in multiple sections managed by the same supervisor)
+        users_map = {}
+        for user, role in rows:
+            if user.id not in users_map:
+                users_map[user.id] = {
+                    "id": user.id, 
+                    "email": user.email, 
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "role": role
+                }
+
+        return list(users_map.values())
 
 user_service = UserService()

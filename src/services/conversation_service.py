@@ -52,18 +52,18 @@ class ConversationService:
 
         employees_map = {aid: [] for aid in agent_ids}
         if agent_ids and user.current_role in [RoleEnum.OWNER, RoleEnum.SUPERVISOR]:
-            emp_stmt = select(EmployeeAgent.agent_id, User.email).join(User, EmployeeAgent.employee_id == User.id).where(EmployeeAgent.agent_id.in_(agent_ids))
-            for aid, email in (await db.execute(emp_stmt)).all():
-                employees_map[aid].append(email.split('@')[0]) # Use email prefix as display name
+            emp_stmt = select(EmployeeAgent.agent_id, User.first_name, User.last_name).join(User, EmployeeAgent.employee_id == User.id).where(EmployeeAgent.agent_id.in_(agent_ids))
+            for aid, fname, lname in (await db.execute(emp_stmt)).all():
+                employees_map[aid].append(f"{fname} {lname}")
 
         supervisors_map = {sid: [] for sid in section_ids}
         if section_ids and user.current_role == RoleEnum.OWNER:
-            sup_stmt = select(SectionUser.section_id, User.email)\
+            sup_stmt = select(SectionUser.section_id, User.first_name, User.last_name)\
                 .join(User, SectionUser.user_id == User.id)\
                 .join(CompanyUser, CompanyUser.user_id == User.id)\
                 .where(SectionUser.section_id.in_(section_ids), CompanyUser.role == RoleEnum.SUPERVISOR, CompanyUser.company_id == UUID(user.current_company_id))
-            for sid, email in (await db.execute(sup_stmt)).all():
-                supervisors_map[sid].append(email.split('@')[0])
+            for sid, fname, lname in (await db.execute(sup_stmt)).all():
+                supervisors_map[sid].append(f"{fname} {lname}")
 
         # 6. Format Response
         response = []

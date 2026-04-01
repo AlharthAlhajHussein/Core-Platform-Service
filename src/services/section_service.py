@@ -25,6 +25,11 @@ class SectionService:
         await db.delete(section)
         await db.commit()
 
+    async def get_all_sections(self, db: AsyncSession, current_user: User):
+        stmt = select(Section).filter(Section.company_id == UUID(current_user.current_company_id))
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
     async def assign_user(self, db: AsyncSession, current_user: User, section_id: UUID, target_user_id: UUID):
         # 1. Verify section exists and belongs to company
         section = await db.get(Section, section_id)
