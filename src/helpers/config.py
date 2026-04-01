@@ -1,4 +1,8 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Dynamically resolve the absolute path to the src/.env file
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 
 class Settings(BaseSettings):
     
@@ -6,16 +10,16 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     
     # Database
-    db_user: str | None
-    db_password: str | None
+    db_user: str | None = None
+    db_password: str | None = None
     db_host: str = "localhost"
     db_port: int = 5432
-    db_name: str | None
+    db_name: str | None = None
 
     # Redis
     redis_host: str = "localhost"
     redis_port: int = 6379
-    redis_password: str | None
+    redis_password: str | None = None
 
     # Security
     secret_key: str | None = None
@@ -28,10 +32,10 @@ class Settings(BaseSettings):
     fernet_key: bytes | None = None
 
     # Internal Services
-    rag_service_url: str | None
-    internal_secret: str | None 
+    rag_service_url: str | None = None
+    internal_secret: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=env_path)
 
 
 settings = Settings()

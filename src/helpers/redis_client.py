@@ -1,6 +1,6 @@
 import redis.asyncio as redis
 from uuid import UUID
-from helpers.config import settings
+from helpers import settings
 
 # Redis client instance
 _redis_client: redis.Redis | None = None
