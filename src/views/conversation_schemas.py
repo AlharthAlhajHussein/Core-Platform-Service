@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
+from models.conversations import ConversationStatus, ConversationEvaluation
 
 class ConversationListResponse(BaseModel):
     id: UUID
@@ -10,6 +11,8 @@ class ConversationListResponse(BaseModel):
     language: Optional[str] = None
     last_message_preview: Optional[str] = None
     last_activity_at: Optional[datetime] = None
+    evaluation: Optional[str] = None
+    evaluation_notes: Optional[str] = None
     
     # Enriched relational data based on RBAC rules
     agent_name: str
@@ -27,3 +30,10 @@ class MessageResponse(BaseModel):
 class ConversationDetailResponse(BaseModel):
     conversation: ConversationListResponse
     messages: List[MessageResponse]
+
+class ConversationStatusUpdateRequest(BaseModel):
+    status: ConversationStatus
+
+class ConversationEvaluationRequest(BaseModel):
+    evaluation: ConversationEvaluation
+    notes: Optional[str] = None

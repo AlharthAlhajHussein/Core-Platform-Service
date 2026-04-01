@@ -9,6 +9,8 @@ class AgentCreateRequest(BaseModel):
     temperature: float = Field(0.1, ge=0.0, le=2.0)
     whatsapp_token: str | None = Field(None, description="Raw Meta API token (will be encrypted).")
     telegram_token: str | None = Field(None, description="Raw Telegram bot token (will be encrypted).")
+    whatsapp_number: str | None = Field(None, description="The phone number associated with the WhatsApp agent.")
+    telegram_bot_username: str | None = Field(None, description="The username of the Telegram bot.")
 
 class AgentUpdateRequest(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=100)
@@ -19,6 +21,8 @@ class AgentUpdateRequest(BaseModel):
     knowledge_bucket_registry_id: uuid.UUID | None = None
     whatsapp_token: str | None = Field(None, description="Provide a new token to update, or empty string to clear.")
     telegram_token: str | None = Field(None, description="Provide a new token to update, or empty string to clear.")
+    whatsapp_number: str | None = Field(None, description="Provide a new number to update, or empty string to clear.")
+    telegram_bot_username: str | None = Field(None, description="Provide a new username to update, or empty string to clear.")
 
 class AgentResponse(BaseModel):
     id: uuid.UUID
@@ -28,6 +32,8 @@ class AgentResponse(BaseModel):
     system_prompt: str | None = None
     model_type: str | None = None
     temperature: float | None = None
+    whatsapp_number: str | None = None
+    telegram_bot_username: str | None = None
     is_active: bool | None = None
     # Encrypted tokens are explicitly EXCLUDED from the response for security.
 
