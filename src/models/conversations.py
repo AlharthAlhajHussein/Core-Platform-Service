@@ -9,6 +9,14 @@ class ConversationStatus(str, enum.Enum):
     PENDING_HUMAN = "PENDING_HUMAN"
     COMPLETED = "COMPLETED"
 
+class ConversationEvaluation(str, enum.Enum):
+    BAD = "BAD"
+    NORMAL = "NORMAL"
+    GOOD = "GOOD"
+    VERY_GOOD = "VERY_GOOD"
+    EXCELLENT = "EXCELLENT"
+    OTHERS = "OTHERS"
+
 class Conversation(BaseModel):
     __tablename__ = "conversations"
 
@@ -21,6 +29,8 @@ class Conversation(BaseModel):
     status = Column(Enum(ConversationStatus), nullable=False, default=ConversationStatus.ACTIVE, index=True)
     last_message_preview = Column(String(500), nullable=True)
     last_activity_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    evaluation = Column(Enum(ConversationEvaluation), nullable=True, index=True)
+    evaluation_notes = Column(String(1000), nullable=True)
 
     # Relationships
     company = relationship("Company")

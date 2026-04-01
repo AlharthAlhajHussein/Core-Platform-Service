@@ -17,6 +17,9 @@ class Agent(BaseModel):
     temperature = Column(Float, nullable=False, default=0.1)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
     
+    whatsapp_number = Column(String(50), nullable=True, index=True)
+    telegram_bot_username = Column(String(100), nullable=True, index=True)
+    
     # Channel Integrations (Encrypted Strings)
     whatsapp_token_enc = Column(Text, nullable=True)
     telegram_token_enc = Column(Text, nullable=True)
