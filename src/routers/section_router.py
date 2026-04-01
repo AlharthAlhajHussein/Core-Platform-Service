@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
@@ -22,6 +22,14 @@ async def create_section(
 ):
     """Creates a new organizational section. Only Owners can perform this action."""
     return await section_service.create_section(db=db, current_user=current_user, name=request.name)
+
+@router.get("", status_code=status.HTTP_200_OK, response_model=List[SectionResponse])
+async def list_sections(
+    current_user: Annotated[User, Depends(is_owner)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """Lists all organizational sections in the company. Only Owners can perform this action."""
+    return await section_service.get_all_sections(db=db, current_user=current_user)
 
 @router.delete("/{section_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_section(

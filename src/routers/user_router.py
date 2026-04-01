@@ -1,7 +1,7 @@
-from typing import Annotated
+from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.users import User
@@ -26,24 +26,37 @@ async def create_user(
     """
     return await user_service.create_user(db=db, current_user=current_user, user_data=request)
 
-@router.put("/{target_user_id}/role")
+@router.get("", status_code=status.HTTP_200_OK, response_model=List[UserResponse])
+async def list_users(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    section_id: Optional[UUID] = Query(None, description="Filter users by a specific section.")
+):
+    """
+    Lists users in the company. 
+    Owners see all Supervisors and Employees. 
+    Supervisors see all Employees in sections they manage.
+    """
+    return await user_service.list_users(db=db, current_user=current_user, section_id=section_id)
+
+@router.put("/{user_id}/role")
 async def update_user_role(
-    target_user_id: UUID,
+    user_id: UUID,
     request: UserRoleUpdateRequest,
     current_user: Annotated[User, Depends(is_owner)], # Only Owners can do this
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Promotes or demotes a user. Will instantly log them out globally."""
     return await user_service.update_user_role(
-        db=db, current_user=current_user, target_user_id=target_user_id, new_role=request.role
+        db=db, current_user=current_user, target_user_id=user_id, new_role=request.role
     )
 
-@router.delete("/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_user(
-    target_user_id: UUID,
+    user_id: UUID,
     current_user: Annotated[User, Depends(is_owner)], # Only Owners can remove for now
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Removes a user from the company and instantly logs them out globally."""
-    await user_service.remove_user_from_company(db=db, current_user=current_user, target_user_id=target_user_id)
+    await user_service.remove_user_from_company(db=db, current_user=current_user, target_user_id=user_id)
     return None

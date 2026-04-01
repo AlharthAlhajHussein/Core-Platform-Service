@@ -153,7 +153,7 @@ async def can_access_agent(
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this agent.")
 
 async def can_access_kb(
-    kb_registry_id: UUID,
+    kb_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ) -> KnowledgeBucketRegistry:
@@ -162,7 +162,7 @@ async def can_access_kb(
     Returns the knowledge bucket object on success.
     """
     # 1. Fetch the knowledge bucket from the database
-    result = await db.execute(select(KnowledgeBucketRegistry).filter(KnowledgeBucketRegistry.id == kb_registry_id))
+    result = await db.execute(select(KnowledgeBucketRegistry).filter(KnowledgeBucketRegistry.id == kb_id))
     kb = result.scalar_one_or_none()
     if not kb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge bucket not found")
@@ -196,7 +196,7 @@ async def can_access_kb(
         query = select(EmployeeAgent).join(Agent).filter(
             EmployeeAgent.employee_id == current_user.id,
             Agent.id == EmployeeAgent.agent_id, # Explicit join condition
-            Agent.knowledge_bucket_id == kb_registry_id,
+            Agent.knowledge_bucket_id == kb_id,
             Agent.company_id == UUID(current_user.current_company_id) # Ensure multi-tenancy for the agent
         )
         result = await db.execute(query)

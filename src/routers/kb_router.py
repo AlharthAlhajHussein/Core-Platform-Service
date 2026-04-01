@@ -1,7 +1,7 @@
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status, UploadFile, File
+from fastapi import APIRouter, Depends, status, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.users import User
@@ -28,19 +28,33 @@ async def create_knowledge_bucket(
     """
     return await knowledge_bucket_service.create_bucket(db=db, current_user=current_user, kb_data=request)
 
-@router.delete("/{kb_registry_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.get("", status_code=status.HTTP_200_OK, response_model=List[KnowledgeBucketResponse])
+async def list_knowledge_buckets(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    section_id: Optional[UUID] = Query(None, description="Filter KBs by section (Owners only)")
+):
+    """
+    Retrieves a list of Knowledge Buckets based on the user's role.
+    - Owners see all KBs, and can filter by section.
+    - Supervisors see KBs in their managed sections.
+    - Employees only see KBs linked to the agents they are assigned to.
+    """
+    return await knowledge_bucket_service.list_buckets(db=db, current_user=current_user, section_id=section_id)
+
+@router.delete("/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_knowledge_bucket(
-    kb_registry_id: UUID,
+    kb_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """
     Deletes a Knowledge Bucket and gracefully unlinks any assigned Agents.
     """
-    await knowledge_bucket_service.delete_bucket(db=db, current_user=current_user, kb_registry_id=kb_registry_id)
+    await knowledge_bucket_service.delete_bucket(db=db, current_user=current_user, kb_registry_id=kb_id)
     return None
 
-@router.post("/{kb_registry_id}/upload", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{kb_id}/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document_to_bucket(
     kb: Annotated[KnowledgeBucketRegistry, Depends(can_access_kb)],
     files: Annotated[List[UploadFile], File(description="One or more documents to upload to the knowledge bucket.")]

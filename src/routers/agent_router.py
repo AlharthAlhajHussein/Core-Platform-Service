@@ -1,7 +1,7 @@
-from typing import Annotated
+from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.users import User
@@ -28,6 +28,21 @@ async def create_agent(
     Owners can create in ANY section. Supervisors can ONLY create in sections they manage.
     """
     return await agent_service.create_agent(db=db, current_user=current_user, agent_data=request)
+
+@router.get("", status_code=status.HTTP_200_OK, response_model=List[AgentResponse])
+async def list_agents(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    section_id: Optional[UUID] = Query(None, description="Filter agents by section (Owners only)"),
+    user_id: Optional[UUID] = Query(None, description="Filter agents by assigned user (Owners & Supervisors only)")
+):
+    """
+    Retrieves a list of AI agents based on the user's role.
+    - Owners see all agents, and can filter by section and user.
+    - Supervisors see agents in their managed sections, and can filter by assigned user.
+    - Employees only see agents explicitly assigned to them.
+    """
+    return await agent_service.list_agents(db=db, current_user=current_user, section_id=section_id, user_id=user_id)
 
 @router.put("/{agent_id}", response_model=AgentResponse)
 async def update_agent(
