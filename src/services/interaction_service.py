@@ -38,14 +38,14 @@ class InteractionService:
                 sender_id=payload.sender_id,
                 platform=payload.platform,
                 last_message_preview=ai_preview,
-                last_activity_at=datetime.now(timezone.utc)
+                last_activity_at=payload.ai_response.message_time
             ).on_conflict_do_update(
                 # If a conversation with this agent_id and sender_id already exists...
                 index_elements=['agent_id', 'sender_id'],
                 # ...update these fields.
                 set_={
                     'last_message_preview': ai_preview,
-                    'last_activity_at': datetime.now(timezone.utc)
+                    'last_activity_at': payload.ai_response.message_time
                 }
             ).returning(Conversation.id)
 

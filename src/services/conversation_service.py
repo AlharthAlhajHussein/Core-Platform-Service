@@ -11,6 +11,7 @@ from models.employee_agents import EmployeeAgent
 from models.company_users import CompanyUser, RoleEnum
 from models.conversations import Conversation
 from models.messages import Message
+from views.conversation_schemas import ConversationStatusUpdateRequest, ConversationEvaluationRequest
 
 class ConversationService:
     async def list_conversations(
@@ -76,6 +77,8 @@ class ConversationService:
                 "last_message_preview": conv.last_message_preview,
                 "last_activity_at": conv.last_activity_at,
                 "agent_name": row.agent_name,
+                "evaluation": str(conv.evaluation.value) if conv.evaluation else None,
+                "evaluation_notes": conv.evaluation_notes,
             }
             if user.current_role in [RoleEnum.OWNER, RoleEnum.SUPERVISOR]:
                 item["assigned_employees"] = employees_map.get(row.agent_id, [])
@@ -109,5 +112,16 @@ class ConversationService:
             "text": m.text, "media_url": m.media_url,
             "timestamp": m.timestamp
         } for m in messages]
+
+    async def update_status(self, db: AsyncSession, conv: Conversation, update_data: ConversationStatusUpdateRequest):
+        conv.status = update_data.status
+        await db.commit()
+        return conv
+
+    async def evaluate_conversation(self, db: AsyncSession, conv: Conversation, eval_data: ConversationEvaluationRequest):
+        conv.evaluation = eval_data.evaluation
+        conv.evaluation_notes = eval_data.notes
+        await db.commit()
+        return conv
 
 conversation_service = ConversationService()

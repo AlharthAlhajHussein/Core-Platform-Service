@@ -44,7 +44,9 @@ class AgentService:
             model_type=agent_data.model_type,
             temperature=agent_data.temperature,
             whatsapp_token_enc=encrypt(agent_data.whatsapp_token) if agent_data.whatsapp_token else None,
-            telegram_token_enc=encrypt(agent_data.telegram_token) if agent_data.telegram_token else None
+            telegram_token_enc=encrypt(agent_data.telegram_token) if agent_data.telegram_token else None,
+            whatsapp_number=agent_data.whatsapp_number,
+            telegram_bot_username=agent_data.telegram_bot_username
         )
         db.add(new_agent)
         await db.commit()
@@ -95,6 +97,8 @@ class AgentService:
         if update_data.temperature is not None: agent.temperature = update_data.temperature
         if update_data.is_active is not None: agent.is_active = update_data.is_active
         if update_data.knowledge_bucket_registry_id is not None: agent.knowledge_bucket_id = update_data.knowledge_bucket_registry_id
+        if update_data.whatsapp_number is not None: agent.whatsapp_number = update_data.whatsapp_number if update_data.whatsapp_number else None
+        if update_data.telegram_bot_username is not None: agent.telegram_bot_username = update_data.telegram_bot_username if update_data.telegram_bot_username else None
         
         # Re-encrypt tokens if provided
         if update_data.whatsapp_token is not None:
