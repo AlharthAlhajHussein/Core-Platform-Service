@@ -23,7 +23,7 @@ class Message(BaseModel):
     sender_type = Column(Enum(SenderType), nullable=False, index=True)
     message_type = Column(Enum(MessageType), nullable=False, default="text") # "text", "image", "audio"
     media_url = Column(String(250), nullable=True)
-    timestamp = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc).astimezone())
+    timestamp = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     text = Column(Text, nullable=True)
 
     # Relationships
