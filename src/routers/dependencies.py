@@ -88,6 +88,17 @@ async def get_current_user(
 
 # --- RBAC Specific Dependencies ---
 
+def is_platform_admin(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+    """
+    Dependency that strictly checks if the user is an internal platform administrator.
+    """
+    if not current_user.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation not permitted: Requires Platform Admin privileges."
+        )
+    return current_user
+
 def is_owner(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     """
     Dependency that checks if the current user has the 'OWNER' role.
