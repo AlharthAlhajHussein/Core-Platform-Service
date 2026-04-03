@@ -219,3 +219,6 @@ alembic.ini
 
 RAG-Deployment-Guide.md
 .vscode
+ERD.md
+FRONTEND_API_DOCS.md
+Core-Platform-Deployment-Guide.md

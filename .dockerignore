@@ -5,7 +5,7 @@ src/.env
 docker/.env
 gcp-key.json
 
-1. Ignore cache and compiled Python files
+# 1. Ignore cache and compiled Python files
 
 __pycache__/
 __pycache__
@@ -13,11 +13,11 @@ __pycache__
 *.pyo
 .pytest_cache/
 
-1. Ignore database migration configs (not needed for running the API)
+# 2. Ignore database migration configs (not needed for running the API)
 
 src/db/alembic.ini
 
-1. Ignore git and local dev folders
+# 3. Ignore git and local dev folders
 
 .git/
 src/.gitignore
