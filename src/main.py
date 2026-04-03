@@ -2,17 +2,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from helpers.config import settings
-from routers import internal_api, auth_router, user_router, section_router, agent_router, kb_router, conversation_router
+from routers import admin_router, internal_api, auth_router, user_router, section_router, agent_router, kb_router, conversation_router
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="The central source of truth and administrative backbone for the Agents Platform.",
-    contact={
-        "name": "API Support",
-        "url": "https://example.com/support",
-        "email": "support@example.com",
-    },
+    # contact={
+    #     "name": "API Support",
+    #     "url": "https://example.com/support",
+    #     "email": "support@example.com",
+    # },
 )
 
 # Add CORS middleware to allow cross-origin requests from your frontend.
@@ -32,6 +32,7 @@ app.include_router(section_router.router)
 app.include_router(agent_router.router)
 app.include_router(kb_router.router)
 app.include_router(conversation_router.router)
+app.include_router(admin_router.router)  # Keep admin router last to ensure its dependencies are applied to all routes
 
 @app.get("/", tags=["Health Check"])
 async def health_check():

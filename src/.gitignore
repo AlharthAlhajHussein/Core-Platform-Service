@@ -219,3 +219,5 @@ alembic.ini
 
 RAG-Deployment-Guide.md
 .vscode
+
+add_admin_users.py
