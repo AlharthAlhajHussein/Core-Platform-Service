@@ -209,7 +209,7 @@ class AgentService:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this agent's section.")
 
         # 2. Register Webhook with Telegram API
-        webhook_url = f"{settings.gateway_service_url}/api/v1/webhooks/telegram/{req.telegram_bot_username}"
+        webhook_url = f"{settings.gateway_service_url}/webhooks/telegram/{req.telegram_bot_username}"
         telegram_api_url = f"https://api.telegram.org/bot{req.telegram_token}/setWebhook"
         
         async with httpx.AsyncClient() as client:
