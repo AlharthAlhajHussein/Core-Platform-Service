@@ -57,6 +57,6 @@ async def remove_user(
     current_user: Annotated[User, Depends(is_owner)], # Only Owners can remove for now
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    """Removes a user from the company and instantly logs them out globally."""
+    """Removes a user from the company and automatically unassigns them from all sections and agents."""
     await user_service.remove_user_from_company(db=db, current_user=current_user, target_user_id=user_id)
     return None

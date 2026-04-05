@@ -1,13 +1,15 @@
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import delete
 from fastapi import HTTPException, status
 
 from models import User, CompanyUser, SectionUser, Section
 from models.company_users import RoleEnum
+from models.agents import Agent
+from models.employee_agents import EmployeeAgent
 from views.user_schemas import UserCreateRequest
 from helpers.security import get_password_hash
-from helpers.redis_client import add_to_blocklist
 
 class UserService:
     async def create_user(
@@ -128,7 +130,25 @@ class UserService:
         if current_user.id == target_user_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove yourself.")
 
-        # Delete the relationship, revoking their access to this tenant.
+        company_uuid = UUID(current_user.current_company_id)
+
+        # 1. Clean up: Remove user from all sections in this company
+        sections_subq = select(Section.id).where(Section.company_id == company_uuid)
+        await db.execute(
+            delete(SectionUser).where(
+                SectionUser.user_id == target_user_id, SectionUser.section_id.in_(sections_subq)
+            )
+        )
+
+        # 2. Clean up edge case: Remove user from all explicit agent assignments
+        agents_subq = select(Agent.id).where(Agent.company_id == company_uuid)
+        await db.execute(
+            delete(EmployeeAgent).where(
+                EmployeeAgent.employee_id == target_user_id, EmployeeAgent.agent_id.in_(agents_subq)
+            )
+        )
+
+        # 3. Delete the relationship, revoking their access to this tenant.
         await db.delete(company_user)
         await db.commit()
 
