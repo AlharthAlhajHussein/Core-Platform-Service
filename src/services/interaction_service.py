@@ -6,6 +6,7 @@ from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from models import Conversation, Message, UsageLog, Agent
+from models.conversations import ConversationStatus
 from models.messages import SenderType, MessageType
 from views.interaction_schemas import InteractionSyncSchema
 
@@ -30,27 +31,37 @@ class InteractionService:
                 ai_preview = f"[{payload.ai_response.message_type.value.upper()}]"
             ai_preview = ai_preview[:100]
 
-            # --- Step 1: Upsert Conversation ---
-            # Find or create the conversation thread.
-            conversation_stmt = pg_insert(Conversation).values(
-                agent_id=payload.agent_id,
-                company_id=payload.company_id,
-                sender_id=payload.sender_id,
-                platform=payload.platform,
-                last_message_preview=ai_preview,
-                last_activity_at=payload.ai_response.message_time
-            ).on_conflict_do_update(
-                # If a conversation with this agent_id and sender_id already exists...
-                index_elements=['agent_id', 'sender_id'],
-                # ...update these fields.
-                set_={
-                    'last_message_preview': ai_preview,
-                    'last_activity_at': payload.ai_response.message_time
-                }
-            ).returning(Conversation.id)
+            # --- Step 1: Find or Create Conversation Session ---
+            # Fetch the most recent conversation for this specific user & agent
+            stmt = select(Conversation).filter(
+                Conversation.agent_id == payload.agent_id,
+                Conversation.sender_id == payload.sender_id
+            ).order_by(Conversation.created_at.desc()).limit(1)
+            
+            result = await db.execute(stmt)
+            conversation = result.scalar_one_or_none()
 
-            conversation_result = await db.execute(conversation_stmt)
-            conversation_id = conversation_result.scalar_one()
+            if not conversation:
+                # Create a brand new active conversation ticket
+                conversation = Conversation(
+                    agent_id=payload.agent_id,
+                    company_id=payload.company_id,
+                    sender_id=payload.sender_id,
+                    platform=payload.platform,
+                    last_message_preview=ai_preview,
+                    last_activity_at=payload.ai_response.message_time,
+                    status=ConversationStatus.ACTIVE
+                )
+                db.add(conversation)
+                await db.flush() # Generates the UUID immediately
+            else:
+                # Append to the existing active/escalated conversation
+                conversation.last_message_preview = ai_preview
+                conversation.last_activity_at = payload.ai_response.message_time
+                # Note: We intentionally do not change the status if it's PENDING_HUMAN,
+                # so human agents don't lose track of the escalated ticket!
+                
+            conversation_id = conversation.id
 
             # --- Step 2: Batch Insert Messages ---
             # Create message records for both the user and the AI.
