@@ -3,7 +3,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from models import Conversation, Message, UsageLog, Agent
 from models.conversations import ConversationStatus
@@ -89,22 +88,26 @@ class InteractionService:
             # This is the most critical part for preventing race conditions in billing.
             billing_month = datetime.now(timezone.utc).strftime('%Y-%m')
 
-            usage_log_stmt = pg_insert(UsageLog).values(
-                company_id=payload.company_id,
-                agent_id=payload.agent_id,
-                billing_month=billing_month,
-                messages_sent=1,
-                tokens_used=payload.tokens_used
-            ).on_conflict_do_update(
-                # If a log for this agent and month already exists...
-                index_elements=['agent_id', 'billing_month'],
-                # ...atomically increment the counters.
-                set_={
-                    'messages_sent': UsageLog.messages_sent + 1,
-                    'tokens_used': UsageLog.tokens_used + payload.tokens_used
-                }
+            # Fetch with row-level lock (FOR UPDATE) to safely prevent race conditions
+            usage_stmt = select(UsageLog).with_for_update().filter(
+                UsageLog.agent_id == payload.agent_id,
+                UsageLog.billing_month == billing_month
             )
-            await db.execute(usage_log_stmt)
+            usage_result = await db.execute(usage_stmt)
+            usage_log = usage_result.scalar_one_or_none()
+
+            if usage_log:
+                usage_log.messages_sent += 1
+                usage_log.tokens_used += payload.tokens_used
+            else:
+                new_usage_log = UsageLog(
+                    company_id=payload.company_id,
+                    agent_id=payload.agent_id,
+                    billing_month=billing_month,
+                    messages_sent=1,
+                    tokens_used=payload.tokens_used
+                )
+                db.add(new_usage_log)
 
             # --- Step 4: Commit the entire transaction ---
             # If any of the above steps fail, the session will raise an exception
