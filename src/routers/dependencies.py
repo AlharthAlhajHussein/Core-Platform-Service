@@ -259,7 +259,7 @@ async def verify_internal_secret(x_internal_secret: Annotated[str | None, Header
     Dependency to verify the static secret for internal service-to-service communication.
     """
     # Edge Case: Handle both missing header and incorrect secret value.
-    if not x_internal_secret or x_internal_secret != settings.internal_secret:
+    if not x_internal_secret or x_internal_secret != settings.core_internal_secret:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing X-Internal-Secret header."

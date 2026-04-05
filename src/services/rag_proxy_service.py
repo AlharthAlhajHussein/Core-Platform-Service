@@ -13,7 +13,7 @@ class RAGProxyService:
     """
     def __init__(self):
         self.base_url = settings.rag_service_url
-        self.headers = {"X-Internal-Secret": settings.internal_secret}
+        self.headers = {"X-Internal-Secret": settings.core_internal_secret}
 
     async def _make_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """A helper to make authenticated async requests to the RAG service."""
