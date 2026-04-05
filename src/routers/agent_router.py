@@ -9,7 +9,8 @@ from models.agents import Agent
 from routers.dependencies import get_db, get_current_user, can_access_agent, is_owner
 from services.agent_service import agent_service
 from views.agent_schemas import (
-    AgentCreateRequest, AgentUpdateRequest, AgentResponse, AgentEmployeeAssignRequest
+    AgentCreateRequest, AgentUpdateRequest, AgentResponse, 
+    AgentEmployeeAssignRequest, AgentTelegramRegisterRequest
 )
 
 router = APIRouter(
@@ -69,6 +70,19 @@ async def assign_user_to_agent(
     """
     await agent_service.assign_employee(db=db, current_user=current_user, agent_id=agent_id, target_user_id=request.user_id)
     return {"status": "success", "detail": "User assigned to agent successfully."}
+
+@router.post("/{agent_id}/telegram/register", status_code=status.HTTP_200_OK)
+async def register_telegram_channel(
+    agent_id: UUID,
+    request: AgentTelegramRegisterRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """
+    Registers a Telegram bot webhook for the agent.
+    Owners and Supervisors (who manage the section) can perform this.
+    """
+    return await agent_service.register_telegram(db=db, current_user=current_user, agent_id=agent_id, req=request)
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_agent(

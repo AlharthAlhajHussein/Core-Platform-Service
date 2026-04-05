@@ -24,6 +24,10 @@ class AgentUpdateRequest(BaseModel):
     whatsapp_number: str | None = Field(None, description="Provide a new number to update, or empty string to clear.")
     telegram_bot_username: str | None = Field(None, description="Provide a new username to update, or empty string to clear.")
 
+class AgentTelegramRegisterRequest(BaseModel):
+    telegram_bot_username: str = Field(..., description="The exact username of the bot (e.g., MyAwesomeBot)")
+    telegram_token: str = Field(..., description="The HTTP API token provided by BotFather")
+
 class AgentResponse(BaseModel):
     id: uuid.UUID
     company_id: uuid.UUID
@@ -35,6 +39,7 @@ class AgentResponse(BaseModel):
     whatsapp_number: str | None = None
     telegram_bot_username: str | None = None
     is_active: bool | None = None
+    knowledge_bucket_id: uuid.UUID | None = None
     # Encrypted tokens are explicitly EXCLUDED from the response for security.
 
     class Config:

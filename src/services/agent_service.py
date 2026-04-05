@@ -1,4 +1,5 @@
 from uuid import UUID
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from fastapi import HTTPException, status
@@ -9,9 +10,13 @@ from models.sections import Section
 from models.section_users import SectionUser
 from models.company_users import CompanyUser, RoleEnum
 from models.employee_agents import EmployeeAgent
-from views.agent_schemas import AgentCreateRequest, AgentUpdateRequest
+from views.agent_schemas import AgentCreateRequest, AgentUpdateRequest, AgentTelegramRegisterRequest
 from helpers.encryption import encrypt
 from helpers.redis_client import delete_agent_config_cache
+from helpers.config import settings
+
+import logging  
+logger = logging.getLogger("uvicorn.error")
 
 class AgentService:
     async def create_agent(self, db: AsyncSession, current_user: User, agent_data: AgentCreateRequest) -> Agent:
@@ -51,6 +56,24 @@ class AgentService:
         db.add(new_agent)
         await db.commit()
         await db.refresh(new_agent)
+        
+        if not agent_data.telegram_bot_username and not agent_data.telegram_token:
+            # 5. Register Webhook with Telegram API
+            webhook_url = f"{settings.gateway_service_url}/api/v1/webhooks/telegram/{agent_data.telegram_bot_username}"
+            telegram_api_url = f"https://api.telegram.org/bot{agent_data.telegram_token}/setWebhook"
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(telegram_api_url, json={
+                    "url": webhook_url,
+                    "secret_token": settings.telegram_webhook_secret,
+                    "drop_pending_updates": True
+                }, timeout=10.0)
+                
+            if response.status_code != 200 or not response.json().get("ok"):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Telegram API Error: {response.json().get('description', 'Unknown error')}")
+
+            logger.info(f"Agent {new_agent.id} registered with telegram correctly")
+            
         return new_agent
 
     async def list_agents(
@@ -166,5 +189,47 @@ class AgentService:
         await db.delete(agent)
         await db.commit()
         await delete_agent_config_cache(agent_id)
+
+    async def register_telegram(self, db: AsyncSession, current_user: User, agent_id: UUID, req: AgentTelegramRegisterRequest) -> dict:
+        # 1. Enforce RBAC rules
+        if current_user.current_role == RoleEnum.EMPLOYEE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot register channels.")
+
+        agent = await db.get(Agent, agent_id)
+        if not agent or str(agent.company_id) != current_user.current_company_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
+
+        if current_user.current_role == RoleEnum.SUPERVISOR:
+            su_check = await db.execute(
+                select(SectionUser).filter(
+                    SectionUser.user_id == current_user.id, SectionUser.section_id == agent.section_id
+                )
+            )
+            if not su_check.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this agent's section.")
+
+        # 2. Register Webhook with Telegram API
+        webhook_url = f"{settings.gateway_service_url}/api/v1/webhooks/telegram/{req.telegram_bot_username}"
+        telegram_api_url = f"https://api.telegram.org/bot{req.telegram_token}/setWebhook"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(telegram_api_url, json={
+                "url": webhook_url,
+                "secret_token": settings.telegram_webhook_secret,
+                "drop_pending_updates": True
+            }, timeout=10.0)
+            
+        if response.status_code != 200 or not response.json().get("ok"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Telegram API Error: {response.json().get('description', 'Unknown error')}")
+
+        logger.info(f"Agent {agent.id} registered with telegram correctly")
+        
+        # 3. Save to DB and Invalidate Cache
+        agent.telegram_bot_username = req.telegram_bot_username
+        agent.telegram_token_enc = encrypt(req.telegram_token)
+        await db.commit()
+        await delete_agent_config_cache(agent_id=agent_id, platform="telegram", identifier=req.telegram_bot_username)
+        
+        return {"status": "success", "detail": "Telegram webhook registered successfully."}
 
 agent_service = AgentService()
