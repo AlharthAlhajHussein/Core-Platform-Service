@@ -31,9 +31,15 @@ class Settings(BaseSettings):
     # Run this command to generate key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     fernet_key: bytes | None = None
 
-    # Internal Services
+    # RAG URL
     rag_service_url: str | None = None
-    internal_secret: str | None = None
+    
+    # secret key for auth between other services and core interanl endpoints
+    core_internal_secret: str | None = None
+    
+    # For Telegram Webhook Registration (used by Channel Gateway)
+    gateway_service_url: str | None = None
+    telegram_webhook_secret: str | None = None
 
     model_config = SettingsConfigDict(env_file=env_path)
 
