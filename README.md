@@ -32,7 +32,7 @@ uv pip install -r requirements.txt
 ### 4. Start Infrastructure (Database & Redis)
 Create your own `docker-compose.yml` file for backing services (Redis, PostgreSQL):
 ```bash
-docker-compose up -d postgres
+docker-compose up -d postgres redis
 ```
 
 ### 5. Start the FastAPI App
