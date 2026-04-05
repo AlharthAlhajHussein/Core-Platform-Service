@@ -31,12 +31,15 @@ async def is_blocklisted(user_id: UUID) -> bool:
     client = await get_redis_client()
     return await client.sismember("jwt_blocklist", str(user_id))
 
-async def delete_agent_config_cache(agent_id: UUID) -> None:
+async def delete_agent_config_cache(agent_id: UUID = None, platform: str = None, identifier: str = None) -> None:
     """Deletes the cached configuration for a specific agent."""
     client = await get_redis_client()
     # This key format must match what the Gateway and Orchestrator services use for caching.
-    await client.delete(f"agent_config:{str(agent_id)}")
-
+    if not agent_id:
+        await client.delete(f"agent_config:{str(agent_id)}")
+    if not platform and not identifier:
+        await client.delete(f"agent_config:{platform}:{identifier}")
+    
 async def block_token(token: str, ttl: int) -> None:
     """Adds a specific token to the blocklist with a Time-To-Live (TTL)."""
     if ttl > 0:
