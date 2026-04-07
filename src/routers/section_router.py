@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.users import User
 from routers.dependencies import get_db, is_owner
 from services.section_service import section_service
-from views.section_schemas import SectionCreateRequest, SectionResponse, SectionUserAssignRequest
+from views.section_schemas import SectionCreateRequest, SectionResponse, SectionUserRequest
 
 router = APIRouter(
     prefix="/api/v1/sections",
@@ -44,7 +44,7 @@ async def delete_section(
 @router.post("/{section_id}/users", status_code=status.HTTP_200_OK)
 async def assign_user_to_section(
     section_id: UUID,
-    request: SectionUserAssignRequest,
+    request: SectionUserRequest,
     current_user: Annotated[User, Depends(is_owner)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
@@ -53,3 +53,16 @@ async def assign_user_to_section(
         db=db, current_user=current_user, section_id=section_id, target_user_id=request.user_id
     )
     return {"status": "success", "detail": "User assigned to section successfully."}
+
+@router.delete("/{section_id}/users", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_user_from_section(
+    section_id: UUID,
+    request: SectionUserRequest,
+    current_user: Annotated[User, Depends(is_owner)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """Removes a user from a specific section. Only Owners can perform this action."""
+    await section_service.remove_user(
+        db=db, current_user=current_user, section_id=section_id, target_user_id=request.user_id
+    )
+    return None

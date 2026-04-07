@@ -12,5 +12,5 @@ class SectionResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class SectionUserAssignRequest(BaseModel):
+class SectionUserRequest(BaseModel):
     user_id: uuid.UUID
