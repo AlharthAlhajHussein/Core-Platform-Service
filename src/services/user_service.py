@@ -146,12 +146,27 @@ class UserService:
                 )
             )
             overlap_result = await db.execute(overlap_query)
-            if not overlap_result.scalars().first():
+            shared_sections = overlap_result.scalars().all()
+            if not shared_sections:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this user's section.")
+
+            # SUPERVISOR LOGIC: Only remove the user from the shared sections and their agents.
+            for su in shared_sections:
+                await db.delete(su)
+                
+            shared_section_ids = [su.section_id for su in shared_sections]
+            agents_subq = select(Agent.id).where(Agent.section_id.in_(shared_section_ids))
+            await db.execute(
+                delete(EmployeeAgent).where(
+                    EmployeeAgent.employee_id == target_user_id, EmployeeAgent.agent_id.in_(agents_subq)
+                )
+            )
+            await db.commit()
+            return  # Early exit. The user is NOT removed from the company.
 
         company_uuid = UUID(current_user.current_company_id)
 
-        # 1. Clean up: Remove user from all sections in this company
+        # OWNER LOGIC: Remove user from all sections in this company
         sections_subq = select(Section.id).where(Section.company_id == company_uuid)
         await db.execute(
             delete(SectionUser).where(
