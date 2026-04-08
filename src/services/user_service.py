@@ -134,36 +134,6 @@ class UserService:
         if not company_user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in your company.")
 
-        # Supervisor RBAC Check
-        if current_user.current_role == RoleEnum.SUPERVISOR:
-            if company_user.role != RoleEnum.EMPLOYEE:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supervisors can only remove Employees.")
-            
-            overlap_query = select(SectionUser).where(
-                SectionUser.user_id == target_user_id,
-                SectionUser.section_id.in_(
-                    select(SectionUser.section_id).where(SectionUser.user_id == current_user.id)
-                )
-            )
-            overlap_result = await db.execute(overlap_query)
-            shared_sections = overlap_result.scalars().all()
-            if not shared_sections:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this user's section.")
-
-            # SUPERVISOR LOGIC: Only remove the user from the shared sections and their agents.
-            for su in shared_sections:
-                await db.delete(su)
-                
-            shared_section_ids = [su.section_id for su in shared_sections]
-            agents_subq = select(Agent.id).where(Agent.section_id.in_(shared_section_ids))
-            await db.execute(
-                delete(EmployeeAgent).where(
-                    EmployeeAgent.employee_id == target_user_id, EmployeeAgent.agent_id.in_(agents_subq)
-                )
-            )
-            await db.commit()
-            return  # Early exit. The user is NOT removed from the company.
-
         company_uuid = UUID(current_user.current_company_id)
 
         # OWNER LOGIC: Remove user from all sections in this company

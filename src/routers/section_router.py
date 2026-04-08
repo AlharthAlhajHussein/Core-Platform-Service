@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.users import User
-from routers.dependencies import get_db, is_owner
+from routers.dependencies import get_db, is_owner, get_current_user
 from services.section_service import section_service
 from views.section_schemas import SectionCreateRequest, SectionResponse, SectionUserRequest
 
@@ -58,10 +58,10 @@ async def assign_user_to_section(
 async def remove_user_from_section(
     section_id: UUID,
     request: SectionUserRequest,
-    current_user: Annotated[User, Depends(is_owner)],
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    """Removes a user from a specific section. Only Owners can perform this action."""
+    """Removes a user from a specific section. Owners and Supervisors (who manage the section) can perform this."""
     await section_service.remove_user(
         db=db, current_user=current_user, section_id=section_id, target_user_id=request.user_id
     )

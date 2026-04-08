@@ -66,13 +66,9 @@ async def update_user_role(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_user(
     user_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)], 
+    current_user: Annotated[User, Depends(is_owner)], 
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    """
-    Removes a user. 
-    - Owners remove the user from the company entirely. 
-    - Supervisors only unassign the user from the sections they manage.
-    """
+    """Removes a user from the company entirely. Only Owners can perform this action."""
     await user_service.remove_user_from_company(db=db, current_user=current_user, target_user_id=user_id)
     return None
