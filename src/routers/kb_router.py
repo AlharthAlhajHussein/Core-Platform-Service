@@ -32,13 +32,13 @@ async def create_knowledge_bucket(
 async def list_knowledge_buckets(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    section_id: Optional[UUID] = Query(None, description="Filter KBs by section (Owners only)")
+    section_id: Optional[UUID] = Query(None, description="Filter KBs by section")
 ):
     """
     Retrieves a list of Knowledge Buckets based on the user's role.
     - Owners see all KBs, and can filter by section.
-    - Supervisors see KBs in their managed sections.
-    - Employees only see KBs linked to the agents they are assigned to.
+    - Supervisors see KBs in their managed sections, and can filter by section.
+    - Employees see KBs linked to the agents they are assigned to, and can filter by section.
     """
     return await knowledge_bucket_service.list_buckets(db=db, current_user=current_user, section_id=section_id)
 

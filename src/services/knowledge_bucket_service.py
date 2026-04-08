@@ -105,6 +105,8 @@ class KnowledgeBucketService:
             # Restrict to sections managed by this supervisor
             managed_sections = select(SectionUser.section_id).where(SectionUser.user_id == current_user.id)
             stmt = stmt.where(KnowledgeBucketRegistry.section_id.in_(managed_sections))
+            if section_id:
+                stmt = stmt.where(KnowledgeBucketRegistry.section_id == section_id)
             
         elif current_user.current_role == RoleEnum.EMPLOYEE:
             # Employees only see KBs that are linked to agents they are explicitly assigned to manage
@@ -117,6 +119,8 @@ class KnowledgeBucketService:
                 )
             )
             stmt = stmt.where(KnowledgeBucketRegistry.id.in_(assigned_agents_kbs))
+            if section_id:
+                stmt = stmt.where(KnowledgeBucketRegistry.section_id == section_id)
 
         result = await db.execute(stmt)
         return result.scalars().all()
