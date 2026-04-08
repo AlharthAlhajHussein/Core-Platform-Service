@@ -4,7 +4,7 @@ from sqlalchemy.future import select
 from sqlalchemy import delete
 from fastapi import HTTPException, status
 
-from models import User, CompanyUser, SectionUser, Section
+from models import User, CompanyUser, SectionUser, Section, Company
 from models.company_users import RoleEnum
 from models.agents import Agent
 from models.employee_agents import EmployeeAgent
@@ -220,5 +220,32 @@ class UserService:
                 }
 
         return list(users_map.values())
+
+    async def get_user_details(self, db: AsyncSession, current_user: User) -> dict:
+        # Fetch all companies the user belongs to along with their role in each
+        companies_stmt = select(Company.id, Company.name, CompanyUser.role).join(
+            CompanyUser, Company.id == CompanyUser.company_id
+        ).where(CompanyUser.user_id == current_user.id)
+        companies_result = await db.execute(companies_stmt)
+        companies = [
+            {"id": row.id, "name": row.name, "role": row.role}
+            for row in companies_result.all()
+        ]
+
+        # Fetch all sections the user is explicitly assigned to
+        sections_stmt = select(Section.id, Section.name, Section.company_id).join(
+            SectionUser, Section.id == SectionUser.section_id
+        ).where(SectionUser.user_id == current_user.id)
+        sections_result = await db.execute(sections_stmt)
+        sections = [
+            {"id": row.id, "name": row.name, "company_id": row.company_id}
+            for row in sections_result.all()
+        ]
+
+        return {
+            "id": current_user.id, "email": current_user.email, "first_name": current_user.first_name, 
+            "last_name": current_user.last_name, "is_platform_admin": current_user.is_platform_admin,
+            "current_role": current_user.current_role, "companies": companies, "sections": sections
+        }
 
 user_service = UserService()

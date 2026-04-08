@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.users import User
 from routers.dependencies import get_db, get_current_user, is_owner
 from services.user_service import user_service
-from views.user_schemas import UserCreateRequest, UserRoleUpdateRequest, UserResponse
+from views.user_schemas import UserCreateRequest, UserRoleUpdateRequest, UserResponse, UserDetailResponse
 
 router = APIRouter(
     prefix="/api/v1/users",
@@ -38,6 +38,18 @@ async def list_users(
     Supervisors see all Employees in sections they manage.
     """
     return await user_service.list_users(db=db, current_user=current_user, section_id=section_id)
+
+@router.get("/me", status_code=status.HTTP_200_OK, response_model=UserDetailResponse)
+async def get_my_profile(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """
+    Retrieves detailed profile information for the currently authenticated user, 
+    including all associated companies and sections across the platform.
+    Accessible by all users.
+    """
+    return await user_service.get_user_details(db=db, current_user=current_user)
 
 @router.put("/{user_id}/role")
 async def update_user_role(
