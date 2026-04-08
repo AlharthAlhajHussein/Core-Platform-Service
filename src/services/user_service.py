@@ -118,6 +118,12 @@ class UserService:
     async def remove_user_from_company(
         self, db: AsyncSession, current_user: User, target_user_id: UUID
     ):
+        if current_user.current_role == RoleEnum.EMPLOYEE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot remove users.")
+            
+        if current_user.id == target_user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove yourself.")
+
         cu_record = await db.execute(
             select(CompanyUser).filter(
                 CompanyUser.user_id == target_user_id, CompanyUser.company_id == UUID(current_user.current_company_id)
@@ -127,8 +133,21 @@ class UserService:
         
         if not company_user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in your company.")
-        if current_user.id == target_user_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove yourself.")
+
+        # Supervisor RBAC Check
+        if current_user.current_role == RoleEnum.SUPERVISOR:
+            if company_user.role != RoleEnum.EMPLOYEE:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supervisors can only remove Employees.")
+            
+            overlap_query = select(SectionUser).where(
+                SectionUser.user_id == target_user_id,
+                SectionUser.section_id.in_(
+                    select(SectionUser.section_id).where(SectionUser.user_id == current_user.id)
+                )
+            )
+            overlap_result = await db.execute(overlap_query)
+            if not overlap_result.scalars().first():
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this user's section.")
 
         company_uuid = UUID(current_user.current_company_id)
 
