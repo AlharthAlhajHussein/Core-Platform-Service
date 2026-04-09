@@ -16,3 +16,4 @@ class KnowledgeBucketRegistry(BaseModel):
     company = relationship("Company")
     section = relationship("Section", back_populates="knowledge_buckets")
     agents = relationship("Agent", back_populates="knowledge_bucket")
+    documents = relationship("Document", back_populates="knowledge_bucket", cascade="all, delete-orphan")

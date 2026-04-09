@@ -35,6 +35,7 @@ from models.employee_agents import EmployeeAgent
 from models.conversations import Conversation
 from models.messages import Message
 from models.billing import Subscription, UsageLog
+from models.documents import Document
 
 target_metadata = Base.metadata
 
