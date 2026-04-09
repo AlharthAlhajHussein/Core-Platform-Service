@@ -57,16 +57,36 @@ async def delete_knowledge_bucket(
 @router.post("/{kb_id}/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document_to_bucket(
     kb: Annotated[KnowledgeBucketRegistry, Depends(can_access_kb)],
-    files: Annotated[List[UploadFile], File(description="One or more documents to upload to the knowledge bucket.")]
+    files: Annotated[List[UploadFile], File(description="One or more documents to upload to the knowledge bucket.")],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """
     Uploads one or more documents to the RAG service. Accessible by Owners, Supervisors, 
     and Employees who are assigned to an Agent that uses this Knowledge Bucket.
     """
-    # The `can_access_kb` dependency has already verified permissions and fetched the KB object.
-    # We can now use its properties to call the RAG proxy service.
-    return await rag_proxy_service.upload_documents(
+    # 1. Forward the files to the secure internal RAG service
+    response = await rag_proxy_service.upload_documents(
         company_id=kb.company_id,
         container_id=kb.rag_container_id,
         files=files
     )
+    
+    # 2. If successful, extract non-empty filenames and store them locally
+    file_names = [file.filename for file in files if file.filename]
+    if file_names:
+        await knowledge_bucket_service.add_documents(db=db, kb_id=kb.id, file_names=file_names)
+        
+    return response
+
+@router.delete("/{kb_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document_from_bucket(
+    kb: Annotated[KnowledgeBucketRegistry, Depends(can_access_kb)],
+    document_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """
+    Deletes a specific document from a Knowledge Bucket. 
+    Accessible by Owners, Supervisors, and Employees who are assigned to an Agent that uses this KB.
+    """
+    await knowledge_bucket_service.delete_document(db=db, kb=kb, document_id=document_id)
+    return None

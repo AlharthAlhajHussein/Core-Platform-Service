@@ -2,6 +2,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 
 from models import KnowledgeBucketRegistry, Section
@@ -10,6 +11,7 @@ from models.company_users import RoleEnum
 from models.section_users import SectionUser
 from models.agents import Agent
 from models.employee_agents import EmployeeAgent
+from models.documents import Document
 from views.kb_schemas import KnowledgeBucketCreate
 from services.rag_proxy_service import rag_proxy_service
 
@@ -95,7 +97,7 @@ class KnowledgeBucketService:
     ) -> list[KnowledgeBucketRegistry]:
         
         # Base query: Only buckets in the current user's company
-        stmt = select(KnowledgeBucketRegistry).where(KnowledgeBucketRegistry.company_id == UUID(current_user.current_company_id))
+        stmt = select(KnowledgeBucketRegistry).options(selectinload(KnowledgeBucketRegistry.documents)).where(KnowledgeBucketRegistry.company_id == UUID(current_user.current_company_id))
 
         if current_user.current_role == RoleEnum.OWNER:
             if section_id:
@@ -124,5 +126,32 @@ class KnowledgeBucketService:
 
         result = await db.execute(stmt)
         return result.scalars().all()
+
+    async def add_documents(self, db: AsyncSession, kb_id: UUID, file_names: list[str]):
+        docs = [Document(knowledge_bucket_id=kb_id, file_name=name) for name in file_names]
+        db.add_all(docs)
+        await db.commit()
+
+    async def delete_document(self, db: AsyncSession, kb: KnowledgeBucketRegistry, document_id: UUID):
+        # 1. Fetch the document locally
+        doc = await db.get(Document, document_id)
+        if not doc or doc.knowledge_bucket_id != kb.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found in this knowledge bucket.")
+        
+        # 2. Delete from the external RAG service
+        try:
+            await rag_proxy_service.delete_document(
+                company_id=kb.company_id,
+                container_id=kb.rag_container_id,
+                file_name=doc.file_name
+            )
+        except HTTPException as e:
+            # If the RAG service says the document is already gone (404), proceed to clean up our local DB to avoid "ghost" files.
+            if e.status_code != status.HTTP_404_NOT_FOUND:
+                raise e
+
+        # 3. Delete locally
+        await db.delete(doc)
+        await db.commit()
 
 knowledge_bucket_service = KnowledgeBucketService()
