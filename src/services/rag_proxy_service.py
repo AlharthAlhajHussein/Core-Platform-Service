@@ -2,7 +2,6 @@ import httpx
 from fastapi import HTTPException, status, UploadFile
 from uuid import UUID
 from typing import List
-import urllib.parse
 
 from helpers.config import settings
 
@@ -76,12 +75,11 @@ class RAGProxyService:
         response = await self._make_request("POST", endpoint, files=file_list)
         return response.json()
 
-    async def delete_document(self, company_id: UUID, container_id: UUID, file_name: str) -> dict | None:
+    async def delete_document(self, company_id: UUID, container_id: UUID, document_id: UUID) -> dict | None:
         """
         Sends a request to the RAG service to delete a specific document from a container.
         """
-        safe_file_name = urllib.parse.quote(file_name)
-        endpoint = f"/api/v1/documents/{str(company_id)}/{str(container_id)}/{safe_file_name}"
+        endpoint = f"/api/v1/documents/{str(company_id)}/{str(container_id)}/{str(document_id)}"
         
         response = await self._make_request("DELETE", endpoint)
         if response.status_code == 204:

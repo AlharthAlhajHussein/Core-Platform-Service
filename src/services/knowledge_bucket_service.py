@@ -54,10 +54,10 @@ class KnowledgeBucketService:
 
         # 5. Create the registry record in our own database with the ID from the RAG service.
         new_kb_registry = KnowledgeBucketRegistry(
+            id=UUID(rag_container_id),
             name=kb_data.name,
             section_id=kb_data.section_id,
             company_id=company_id,
-            rag_container_id=UUID(rag_container_id),
         )
         db.add(new_kb_registry)
         await db.commit()
@@ -91,7 +91,7 @@ class KnowledgeBucketService:
         try:
             await rag_proxy_service.delete_knowledge_bucket(
                 company_id=kb.company_id,
-                container_id=kb.rag_container_id
+                container_id=kb.id
             )
         except HTTPException as e:
             # If the RAG service says the container is already gone (404), proceed to clean up our local DB.
@@ -136,8 +136,15 @@ class KnowledgeBucketService:
         result = await db.execute(stmt)
         return result.scalars().all()
 
-    async def add_documents(self, db: AsyncSession, kb_id: UUID, file_names: list[str]):
-        docs = [Document(knowledge_bucket_id=kb_id, file_name=name) for name in file_names]
+    async def add_documents(self, db: AsyncSession, kb_id: UUID, documents_data: list[dict]):
+        docs = [
+            Document(
+                id=UUID(doc_data["file_id"]),
+                knowledge_bucket_id=kb_id,
+                file_name=doc_data["filename"]
+            ) 
+            for doc_data in documents_data
+        ]
         db.add_all(docs)
         await db.commit()
 
@@ -151,8 +158,8 @@ class KnowledgeBucketService:
         try:
             await rag_proxy_service.delete_document(
                 company_id=kb.company_id,
-                container_id=kb.rag_container_id,
-                file_name=doc.file_name
+                container_id=kb.id,
+                document_id=doc.id
             )
         except HTTPException as e:
             # If the RAG service says the document is already gone (404), proceed to clean up our local DB to avoid "ghost" files.

@@ -62,7 +62,7 @@ async def get_agent_config(
     if kb_id:
         kb = await db.get(KnowledgeBucketRegistry, kb_id)
         if kb:
-            rag_container_id = kb.rag_container_id
+            rag_container_id = kb.id
 
     return {"whatsapp_token": whatsapp_token, "telegram_token": telegram_token, "rag_container_id": rag_container_id, **agent.__dict__}
 

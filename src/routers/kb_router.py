@@ -9,14 +9,14 @@ from models.knowledge_bucket_registry import KnowledgeBucketRegistry
 from routers.dependencies import get_db, get_current_user, can_access_kb
 from services.knowledge_bucket_service import knowledge_bucket_service
 from services.rag_proxy_service import rag_proxy_service
-from views.kb_schemas import KnowledgeBucketCreate, KnowledgeBucketResponse
+from views.kb_schemas import KnowledgeBucketCreate, KnowledgeBucketResponse, KnowledgeBucketSimpleResponse
 
 router = APIRouter(
     prefix="/api/v1/knowledge-buckets",
     tags=["Knowledge Base Management"]
 )
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=KnowledgeBucketResponse)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=KnowledgeBucketSimpleResponse)
 async def create_knowledge_bucket(
     request: KnowledgeBucketCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -67,14 +67,19 @@ async def upload_document_to_bucket(
     # 1. Forward the files to the secure internal RAG service
     response = await rag_proxy_service.upload_documents(
         company_id=kb.company_id,
-        container_id=kb.rag_container_id,
+        container_id=kb.id,
         files=files
     )
     
-    # 2. If successful, extract non-empty filenames and store them locally
-    file_names = [file.filename for file in files if file.filename]
-    if file_names:
-        await knowledge_bucket_service.add_documents(db=db, kb_id=kb.id, file_names=file_names)
+    # 2. Parse the results and sync the document IDs provided by the RAG Engine locally
+    results = response.get("results", [])
+    if results:
+        documents_data = [
+            {"file_id": res["file_id"], "filename": res["filename"]}
+            for res in results if res.get("file_id") and res.get("filename")
+        ]
+        if documents_data:
+            await knowledge_bucket_service.add_documents(db=db, kb_id=kb.id, documents_data=documents_data)
         
     return response
 
