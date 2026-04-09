@@ -50,6 +50,16 @@ class RAGProxyService:
         response = await self._make_request("POST", "/api/v1/containers/", json=payload)
         return response.json()
 
+    async def delete_knowledge_bucket(self, company_id: UUID, container_id: UUID) -> dict | None:
+        """
+        Sends a request to the RAG service to delete an entire knowledge container and all its mapped documents.
+        """
+        endpoint = f"/api/v1/containers/{str(company_id)}/{str(container_id)}"
+        response = await self._make_request("DELETE", endpoint)
+        if response.status_code == 204:
+            return None
+        return response.json()
+
     async def upload_documents(self, company_id: UUID, container_id: UUID, files: List[UploadFile]) -> dict:
         """
         Streams a list of files to the RAG service's document upload endpoint.

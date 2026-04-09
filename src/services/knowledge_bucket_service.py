@@ -87,7 +87,16 @@ class KnowledgeBucketService:
             .values(knowledge_bucket_id=None)
         )
 
-        # Optional: Call rag_proxy_service.delete_knowledge_bucket(rag_container_id=str(kb.rag_container_id)) here.
+        # 4. Securely call the RAG service to delete the actual vector embeddings and documents
+        try:
+            await rag_proxy_service.delete_knowledge_bucket(
+                company_id=kb.company_id,
+                container_id=kb.rag_container_id
+            )
+        except HTTPException as e:
+            # If the RAG service says the container is already gone (404), proceed to clean up our local DB.
+            if e.status_code != status.HTTP_404_NOT_FOUND:
+                raise e
         
         await db.delete(kb)
         await db.commit()
