@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from helpers.config import settings
-from routers import admin_router, internal_api, auth_router, user_router, section_router, agent_router, kb_router, conversation_router
+from routers import admin_router, internal_api, auth_router, user_router, section_router, agent_router, kb_router, conversation_router, overview_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -27,10 +27,11 @@ app.add_middleware(
 # Include all the routers
 app.include_router(internal_api.router)
 app.include_router(auth_router.router)
-app.include_router(user_router.router)
+app.include_router(overview_router.router)
 app.include_router(section_router.router)
-app.include_router(agent_router.router)
+app.include_router(user_router.router)
 app.include_router(kb_router.router)
+app.include_router(agent_router.router)
 app.include_router(conversation_router.router)
 app.include_router(admin_router.router)  # Keep admin router last to ensure its dependencies are applied to all routes
 
