@@ -8,8 +8,8 @@ from models import User, CompanyUser, SectionUser, Section, Company
 from models.company_users import RoleEnum
 from models.agents import Agent
 from models.employee_agents import EmployeeAgent
-from views.user_schemas import UserCreateRequest
-from helpers.security import get_password_hash
+from views.user_schemas import UserCreateRequest, UserProfileUpdateRequest, UserAccountSettingsUpdateRequest
+from helpers.security import get_password_hash, verify_password
 
 class UserService:
     async def create_user(
@@ -201,6 +201,8 @@ class UserService:
                     "email": user.email, 
                     "first_name": user.first_name,
                     "last_name": user.last_name,
+                    "position": user.position,
+                    "profile_image": user.profile_image,
                     "role": role
                 }
 
@@ -230,7 +232,70 @@ class UserService:
         return {
             "id": current_user.id, "email": current_user.email, "first_name": current_user.first_name, 
             "last_name": current_user.last_name, "is_platform_admin": current_user.is_platform_admin,
+            "position": current_user.position, "bio": current_user.bio, "profile_image": current_user.profile_image,
+            "phone_number": current_user.phone_number, "country": current_user.country, "gender": current_user.gender,
             "current_role": current_user.current_role, "companies": companies, "sections": sections
         }
+
+    async def update_user_profile(
+        self, db: AsyncSession, current_user: User, update_data: UserProfileUpdateRequest
+    ) -> dict:
+        
+        # Check explicitly set fields to correctly handle `None` values (e.g. unlinking a profile image)
+        update_dict = update_data.model_dump(exclude_unset=True) if hasattr(update_data, "model_dump") else update_data.dict(exclude_unset=True)
+        
+        # We need to explicitly reload the user to avoid session issues and be able to return fresh state
+        user = await db.get(User, current_user.id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+            
+        if update_data.first_name is not None: user.first_name = update_data.first_name
+        if update_data.last_name is not None: user.last_name = update_data.last_name
+        
+        if "position" in update_dict: user.position = update_dict["position"]
+        if "bio" in update_dict: user.bio = update_dict["bio"]
+        if "profile_image" in update_dict: user.profile_image = None if update_dict["profile_image"] == "" else update_dict["profile_image"]
+        if "phone_number" in update_dict: user.phone_number = update_dict["phone_number"]
+        if "country" in update_dict: user.country = update_dict["country"]
+        if "gender" in update_dict: user.gender = update_dict["gender"]
+        
+        await db.commit()
+        await db.refresh(user)
+        
+        # Update current_user so the return payload is built accurately 
+        current_user.first_name = user.first_name
+        current_user.last_name = user.last_name
+        current_user.position = user.position
+        current_user.bio = user.bio
+        current_user.profile_image = user.profile_image
+        current_user.phone_number = user.phone_number
+        current_user.country = user.country
+        current_user.gender = user.gender
+        
+        return await self.get_user_details(db, current_user)
+        
+    async def update_user_account_settings(
+        self, db: AsyncSession, current_user: User, update_data: UserAccountSettingsUpdateRequest
+    ):
+        user = await db.get(User, current_user.id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+            
+        # Verify old password
+        if not verify_password(update_data.old_password, user.hashed_password):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect old password.")
+            
+        # Check if email is being updated and verify uniqueness
+        if update_data.new_email and update_data.new_email != user.email:
+            existing_user = await db.execute(select(User).filter(User.email == update_data.new_email))
+            if existing_user.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already in use.")
+            user.email = update_data.new_email
+            
+        # Check if password is being updated
+        if update_data.new_password:
+            user.hashed_password = get_password_hash(update_data.new_password)
+            
+        await db.commit()
 
 user_service = UserService()

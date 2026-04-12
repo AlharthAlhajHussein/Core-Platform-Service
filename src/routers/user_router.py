@@ -7,12 +7,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.users import User
 from routers.dependencies import get_db, get_current_user, is_owner
 from services.user_service import user_service
-from views.user_schemas import UserCreateRequest, UserRoleUpdateRequest, UserResponse, UserDetailResponse
+from views.user_schemas import (
+    UserCreateRequest, UserRoleUpdateRequest, UserResponse, 
+    UserDetailResponse, UserProfileUpdateRequest, UserAccountSettingsUpdateRequest
+)
 
 router = APIRouter(
     prefix="/api/v1/users",
     tags=["User Management"]
 )
+
+@router.put("/me/profile", status_code=status.HTTP_200_OK, response_model=UserDetailResponse)
+async def update_my_profile(
+    request: UserProfileUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """
+    Updates the authenticated user's profile information.
+    """
+    return await user_service.update_user_profile(db=db, current_user=current_user, update_data=request)
+
+@router.put("/me/account", status_code=status.HTTP_200_OK)
+async def update_my_account_settings(
+    request: UserAccountSettingsUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """
+    Updates the authenticated user's email or password.
+    Requires the current (old) password for security.
+    """
+    await user_service.update_user_account_settings(db=db, current_user=current_user, update_data=request)
+    return {"status": "success", "detail": "Account settings updated successfully."}
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 async def create_user(
