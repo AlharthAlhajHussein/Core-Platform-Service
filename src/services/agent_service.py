@@ -2,6 +2,7 @@ from uuid import UUID
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import or_, and_
 from fastapi import HTTPException, status
 
 from models.agents import Agent
@@ -147,6 +148,100 @@ class AgentService:
         if not ea_check.scalar_one_or_none():
             db.add(EmployeeAgent(employee_id=target_user_id, agent_id=agent_id))
             await db.commit()
+
+    async def remove_employee(self, db: AsyncSession, current_user: User, agent_id: UUID, target_user_id: UUID):
+        """Removes an employee from an agent, revoking their access."""
+        if current_user.current_role == RoleEnum.EMPLOYEE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot manage agent access.")
+
+        agent = await db.get(Agent, agent_id)
+        if not agent or str(agent.company_id) != current_user.current_company_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
+
+        # Supervisors must manage the section the agent belongs to
+        if current_user.current_role == RoleEnum.SUPERVISOR:
+            su_check = await db.execute(
+                select(SectionUser).filter(
+                    SectionUser.user_id == current_user.id, SectionUser.section_id == agent.section_id
+                )
+            )
+            if not su_check.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this agent's section.")
+
+        # Check if they are actually assigned
+        ea_check = await db.execute(
+            select(EmployeeAgent).filter(
+                EmployeeAgent.employee_id == target_user_id, EmployeeAgent.agent_id == agent_id
+            )
+        )
+        employee_agent = ea_check.scalar_one_or_none()
+        
+        if not employee_agent:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not assigned to this agent.")
+
+        await db.delete(employee_agent)
+        await db.commit()
+
+    async def list_agent_users(self, db: AsyncSession, current_user: User, agent_id: UUID) -> list[dict]:
+        # 1. Block employees entirely
+        if current_user.current_role == RoleEnum.EMPLOYEE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot view agent access lists.")
+
+        # 2. Fetch the agent and verify company tenancy
+        agent = await db.get(Agent, agent_id)
+        if not agent or str(agent.company_id) != current_user.current_company_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
+
+        # 3. Supervisor rules: must manage the section the agent belongs to
+        if current_user.current_role == RoleEnum.SUPERVISOR:
+            su_check = await db.execute(
+                select(SectionUser).filter(
+                    SectionUser.user_id == current_user.id, SectionUser.section_id == agent.section_id
+                )
+            )
+            if not su_check.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supervisors can only view access lists for agents in sections they manage.")
+
+        # 4. Fetch users based on role access (Only return levels below the requester)
+        supervisors_condition = and_(
+            CompanyUser.role == RoleEnum.SUPERVISOR,
+            User.id.in_(select(SectionUser.user_id).where(SectionUser.section_id == agent.section_id))
+        )
+        
+        employees_condition = and_(
+            CompanyUser.role == RoleEnum.EMPLOYEE,
+            User.id.in_(select(EmployeeAgent.employee_id).where(EmployeeAgent.agent_id == agent_id))
+        )
+        
+        conditions = []
+        if current_user.current_role == RoleEnum.OWNER:
+            conditions = [supervisors_condition, employees_condition]
+        elif current_user.current_role == RoleEnum.SUPERVISOR:
+            conditions = [employees_condition]
+
+        if not conditions:
+            return []
+
+        stmt = select(User, CompanyUser.role).join(
+            CompanyUser, User.id == CompanyUser.user_id
+        ).where(
+            CompanyUser.company_id == UUID(current_user.current_company_id),
+            or_(*conditions)
+        )
+
+        result = await db.execute(stmt)
+        
+        return [
+            {
+                "id": u.id,
+                "email": u.email,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "role": role,
+                "profile_image": u.profile_image
+            }
+            for u, role in result.all()
+        ]
 
     async def update_agent(self, db: AsyncSession, agent: Agent, update_data: AgentUpdateRequest) -> Agent:
         # The dependency `can_access_agent` in the router already verified the user has permission to do this.

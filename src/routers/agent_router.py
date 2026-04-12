@@ -9,8 +9,8 @@ from models.agents import Agent
 from routers.dependencies import get_db, get_current_user, can_access_agent, is_owner
 from services.agent_service import agent_service
 from views.agent_schemas import (
-    AgentCreateRequest, AgentUpdateRequest, AgentResponse, 
-    AgentEmployeeAssignRequest
+    AgentCreateRequest, AgentUpdateRequest, AgentResponse,
+    AgentEmployeeAssignRequest, AgentUserResponse
 )
 
 router = APIRouter(
@@ -70,6 +70,34 @@ async def assign_user_to_agent(
     """
     await agent_service.assign_employee(db=db, current_user=current_user, agent_id=agent_id, target_user_id=request.user_id)
     return {"status": "success", "detail": "User assigned to agent successfully."}
+
+@router.delete("/{agent_id}/employees", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_employee_from_agent(
+    agent_id: UUID,
+    request: AgentEmployeeAssignRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """
+    Removes an employee from an agent, revoking their permission to manage it.
+    Owners and Section Supervisors can perform this.
+    """
+    await agent_service.remove_employee(db=db, current_user=current_user, agent_id=agent_id, target_user_id=request.user_id)
+    return None
+
+@router.get("/{agent_id}/users", status_code=status.HTTP_200_OK, response_model=List[AgentUserResponse])
+async def list_agent_users(
+    agent_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """
+    Retrieves users who have access to this agent in roles below the requester.
+    - Owners see Supervisors (in the agent's section) and Employees (explicitly assigned).
+    - Supervisors see only Employees (explicitly assigned).
+    Only accessible by Owners and Supervisors managing the agent's section.
+    """
+    return await agent_service.list_agent_users(db=db, current_user=current_user, agent_id=agent_id)
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_agent(

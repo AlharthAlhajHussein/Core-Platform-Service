@@ -44,3 +44,14 @@ class AgentResponse(BaseModel):
 
 class AgentEmployeeAssignRequest(BaseModel):
     user_id: uuid.UUID
+
+class AgentUserResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    first_name: str
+    last_name: str
+    role: str
+    profile_image: str | None = None
+
+    class Config:
+        from_attributes = True
