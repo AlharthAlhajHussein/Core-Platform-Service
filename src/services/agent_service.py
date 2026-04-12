@@ -10,8 +10,8 @@ from models.sections import Section
 from models.section_users import SectionUser
 from models.company_users import CompanyUser, RoleEnum
 from models.employee_agents import EmployeeAgent
-from views.agent_schemas import AgentCreateRequest, AgentUpdateRequest, AgentTelegramRegisterRequest
-from helpers.encryption import encrypt
+from views.agent_schemas import AgentCreateRequest, AgentUpdateRequest
+from helpers.encryption import encrypt, decrypt
 from helpers.redis_client import delete_agent_config_cache
 from helpers.config import settings
 
@@ -48,6 +48,7 @@ class AgentService:
             system_prompt=agent_data.system_prompt,
             model_type=agent_data.model_type,
             temperature=agent_data.temperature,
+            knowledge_bucket_id=agent_data.knowledge_bucket_registry_id,
             whatsapp_token_enc=encrypt(agent_data.whatsapp_token) if agent_data.whatsapp_token else None,
             telegram_token_enc=encrypt(agent_data.telegram_token) if agent_data.telegram_token else None,
             whatsapp_number=agent_data.whatsapp_number,
@@ -57,9 +58,9 @@ class AgentService:
         await db.commit()
         await db.refresh(new_agent)
         
-        if not agent_data.telegram_bot_username and not agent_data.telegram_token:
+        if agent_data.telegram_bot_username and agent_data.telegram_token:
             # 5. Register Webhook with Telegram API
-            webhook_url = f"{settings.gateway_service_url}/api/v1/webhooks/telegram/{agent_data.telegram_bot_username}"
+            webhook_url = f"{settings.gateway_service_url}/webhooks/telegram/{agent_data.telegram_bot_username}"
             telegram_api_url = f"https://api.telegram.org/bot{agent_data.telegram_token}/setWebhook"
             
             async with httpx.AsyncClient() as client:
@@ -93,13 +94,20 @@ class AgentService:
         elif current_user.current_role == RoleEnum.SUPERVISOR:
             # Restrict to sections managed by this supervisor
             managed_sections = select(SectionUser.section_id).where(SectionUser.user_id == current_user.id)
-            stmt = stmt.where(Agent.section_id.in_(managed_sections))
+            if section_id:
+                # Still ensure they only query a section they manage
+                stmt = stmt.where(Agent.section_id == section_id, Agent.section_id.in_(managed_sections))
+            else:
+                stmt = stmt.where(Agent.section_id.in_(managed_sections))
+                
             if user_id:
                 stmt = stmt.join(EmployeeAgent, Agent.id == EmployeeAgent.agent_id).where(EmployeeAgent.employee_id == user_id)
                 
         elif current_user.current_role == RoleEnum.EMPLOYEE:
-            # Employees can only see agents explicitly assigned to them (filters are ignored)
+            # Employees can only see agents explicitly assigned to them
             stmt = stmt.join(EmployeeAgent, Agent.id == EmployeeAgent.agent_id).where(EmployeeAgent.employee_id == current_user.id)
+            if section_id:
+                stmt = stmt.where(Agent.section_id == section_id)
 
         result = await db.execute(stmt)
         return result.scalars().all()
@@ -142,26 +150,84 @@ class AgentService:
 
     async def update_agent(self, db: AsyncSession, agent: Agent, update_data: AgentUpdateRequest) -> Agent:
         # The dependency `can_access_agent` in the router already verified the user has permission to do this.
+        
+        # Check explicitly set fields to correctly handle `None` values (e.g. unlinking a KB)
+        update_dict = update_data.model_dump(exclude_unset=True) if hasattr(update_data, "model_dump") else update_data.dict(exclude_unset=True)
+        
         if update_data.name is not None: agent.name = update_data.name
         if update_data.system_prompt is not None: agent.system_prompt = update_data.system_prompt
         if update_data.model_type is not None: agent.model_type = update_data.model_type
         if update_data.temperature is not None: agent.temperature = update_data.temperature
         if update_data.is_active is not None: agent.is_active = update_data.is_active
-        if update_data.knowledge_bucket_registry_id is not None: agent.knowledge_bucket_id = update_data.knowledge_bucket_registry_id
+        
+        if "knowledge_bucket_registry_id" in update_dict:
+            kb_id = update_data.knowledge_bucket_registry_id
+            if kb_id == "":
+                agent.knowledge_bucket_id = None
+            elif isinstance(kb_id, str):
+                try:
+                    from uuid import UUID
+                    agent.knowledge_bucket_id = UUID(kb_id)
+                except ValueError:
+                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid UUID format for knowledge_bucket_registry_id")
+            else:
+                agent.knowledge_bucket_id = kb_id
+            
         if update_data.whatsapp_number is not None: agent.whatsapp_number = update_data.whatsapp_number if update_data.whatsapp_number else None
-        if update_data.telegram_bot_username is not None: agent.telegram_bot_username = update_data.telegram_bot_username if update_data.telegram_bot_username else None
+        
+        # Track if we need to re-register the telegram webhook
+        telegram_updated = False
+        new_telegram_bot_username = agent.telegram_bot_username
+        new_telegram_token = decrypt(agent.telegram_token_enc) if agent.telegram_token_enc else None
+        old_telegram_token = new_telegram_token
+
+        if update_data.telegram_bot_username is not None: 
+            agent.telegram_bot_username = update_data.telegram_bot_username if update_data.telegram_bot_username else None
+            new_telegram_bot_username = agent.telegram_bot_username
+            telegram_updated = True
         
         # Re-encrypt tokens if provided
         if update_data.whatsapp_token is not None:
             agent.whatsapp_token_enc = encrypt(update_data.whatsapp_token) if update_data.whatsapp_token else None
+            
         if update_data.telegram_token is not None:
             agent.telegram_token_enc = encrypt(update_data.telegram_token) if update_data.telegram_token else None
+            new_telegram_token = update_data.telegram_token if update_data.telegram_token else None
+            telegram_updated = True
+
+        if telegram_updated:
+            # If the user is removing the telegram integration, let's try to delete the webhook from the old bot
+            if (not new_telegram_bot_username or not new_telegram_token) and old_telegram_token:
+                try:
+                    telegram_api_url = f"https://api.telegram.org/bot{old_telegram_token}/deleteWebhook"
+                    async with httpx.AsyncClient() as client:
+                        await client.post(telegram_api_url, timeout=10.0)
+                    logger.info(f"Agent {agent.id} telegram webhook deleted after removing config")
+                except Exception as e:
+                    logger.error(f"Failed to delete old telegram webhook for agent {agent.id}: {e}")
+
+            # Register webhook if both are present
+            if new_telegram_bot_username and new_telegram_token:
+                webhook_url = f"{settings.gateway_service_url}/webhooks/telegram/{new_telegram_bot_username}"
+                telegram_api_url = f"https://api.telegram.org/bot{new_telegram_token}/setWebhook"
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(telegram_api_url, json={
+                        "url": webhook_url,
+                        "secret_token": settings.telegram_webhook_secret,
+                        "drop_pending_updates": True
+                    }, timeout=10.0)
+                    
+                if response.status_code != 200 or not response.json().get("ok"):
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Telegram API Error: {response.json().get('description', 'Unknown error')}")
+                
+                logger.info(f"Agent {agent.id} registered with telegram correctly after update")
 
         await db.commit()
         
         # Extremely Important Edge Case: Invalidate the Redis cache for this agent!
         # Next time Gateway/Orchestrator requests this config, they will pull the fresh updates.
-        await delete_agent_config_cache(agent.id)
+        await delete_agent_config_cache(agent.id, platform="telegram", identifier=agent.telegram_bot_username)
         
         return agent
 
@@ -189,47 +255,5 @@ class AgentService:
         await db.delete(agent)
         await db.commit()
         await delete_agent_config_cache(agent_id)
-
-    async def register_telegram(self, db: AsyncSession, current_user: User, agent_id: UUID, req: AgentTelegramRegisterRequest) -> dict:
-        # 1. Enforce RBAC rules
-        if current_user.current_role == RoleEnum.EMPLOYEE:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot register channels.")
-
-        agent = await db.get(Agent, agent_id)
-        if not agent or str(agent.company_id) != current_user.current_company_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
-
-        if current_user.current_role == RoleEnum.SUPERVISOR:
-            su_check = await db.execute(
-                select(SectionUser).filter(
-                    SectionUser.user_id == current_user.id, SectionUser.section_id == agent.section_id
-                )
-            )
-            if not su_check.scalar_one_or_none():
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not manage this agent's section.")
-
-        # 2. Register Webhook with Telegram API
-        webhook_url = f"{settings.gateway_service_url}/webhooks/telegram/{req.telegram_bot_username}"
-        telegram_api_url = f"https://api.telegram.org/bot{req.telegram_token}/setWebhook"
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(telegram_api_url, json={
-                "url": webhook_url,
-                "secret_token": settings.telegram_webhook_secret,
-                "drop_pending_updates": True
-            }, timeout=10.0)
-            
-        if response.status_code != 200 or not response.json().get("ok"):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Telegram API Error: {response.json().get('description', 'Unknown error')}")
-
-        logger.info(f"Agent {agent.id} registered with telegram correctly")
-        
-        # 3. Save to DB and Invalidate Cache
-        agent.telegram_bot_username = req.telegram_bot_username
-        agent.telegram_token_enc = encrypt(req.telegram_token)
-        await db.commit()
-        await delete_agent_config_cache(agent_id=agent_id, platform="telegram", identifier=req.telegram_bot_username)
-        
-        return {"status": "success", "detail": "Telegram webhook registered successfully."}
 
 agent_service = AgentService()

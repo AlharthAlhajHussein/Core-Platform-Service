@@ -7,6 +7,7 @@ class AgentCreateRequest(BaseModel):
     section_id: uuid.UUID = Field(..., description="The section this agent belongs to.")
     model_type: str = Field("gemini-2.5-flash", description="The LLM model to use.")
     temperature: float = Field(0.1, ge=0.0, le=2.0)
+    knowledge_bucket_registry_id: uuid.UUID | None = Field(None, description="Optional KB to link to.")
     whatsapp_token: str | None = Field(None, description="Raw Meta API token (will be encrypted).")
     telegram_token: str | None = Field(None, description="Raw Telegram bot token (will be encrypted).")
     whatsapp_number: str | None = Field(None, description="The phone number associated with the WhatsApp agent.")
@@ -18,15 +19,11 @@ class AgentUpdateRequest(BaseModel):
     model_type: str | None = None
     temperature: float | None = Field(None, ge=0.0, le=2.0)
     is_active: bool | None = None
-    knowledge_bucket_registry_id: uuid.UUID | None = None
+    knowledge_bucket_registry_id: uuid.UUID | str | None = Field(None, description="Provide a new KB id to update, or empty string to clear.")
     whatsapp_token: str | None = Field(None, description="Provide a new token to update, or empty string to clear.")
     telegram_token: str | None = Field(None, description="Provide a new token to update, or empty string to clear.")
     whatsapp_number: str | None = Field(None, description="Provide a new number to update, or empty string to clear.")
     telegram_bot_username: str | None = Field(None, description="Provide a new username to update, or empty string to clear.")
-
-class AgentTelegramRegisterRequest(BaseModel):
-    telegram_bot_username: str = Field(..., description="The exact username of the bot (e.g., MyAwesomeBot)")
-    telegram_token: str = Field(..., description="The HTTP API token provided by BotFather")
 
 class AgentResponse(BaseModel):
     id: uuid.UUID
