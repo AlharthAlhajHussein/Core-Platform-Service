@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
 
+    # GCS Configuration
+    gcs_project: str = "agents-platform-490417"
+    gcs_bucket: str = "agents-platform-bucket-2"
+    
+    allowed_types: list[str] = ["image/jpeg", "image/png", "image/webp"]
+    
     # Encryption
     # Run this command to generate key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     fernet_key: bytes | None = None

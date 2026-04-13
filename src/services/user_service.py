@@ -1,8 +1,11 @@
+import uuid
+import asyncio
 from uuid import UUID
+from google.cloud import storage
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, UploadFile
 
 from models import User, CompanyUser, SectionUser, Section, Company
 from models.company_users import RoleEnum
@@ -10,6 +13,7 @@ from models.agents import Agent
 from models.employee_agents import EmployeeAgent
 from views.user_schemas import UserCreateRequest, UserProfileUpdateRequest, UserAccountSettingsUpdateRequest
 from helpers.security import get_password_hash, verify_password
+from helpers.config import settings
 
 class UserService:
     async def create_user(
@@ -297,5 +301,50 @@ class UserService:
             user.hashed_password = get_password_hash(update_data.new_password)
             
         await db.commit()
+
+    async def upload_profile_image(self, db: AsyncSession, current_user: User, file: UploadFile) -> dict:
+        # 1. Validate file format
+        if file.content_type not in settings.allowed_types:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPG, PNG, and WebP images are allowed.")
+            
+        # 2. Validate file size explicitly (5MB limit)
+        max_size = 5 * 1024 * 1024
+        if file.size is not None and file.size > max_size:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image size exceeds the 5MB limit.")
+            
+        file_bytes = await file.read()
+        if len(file_bytes) > max_size:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image size exceeds the 5MB limit.")
+            
+        # 3. Determine correct extension
+        ext = ".jpg"
+        if file.content_type == "image/png": ext = ".png"
+        elif file.content_type == "image/webp": ext = ".webp"
+        
+        filename = f"profile_images/{current_user.id}_{uuid.uuid4().hex[:8]}{ext}"
+        
+        def _upload_to_gcs():
+            client = storage.Client(project=settings.gcs_project)
+            bucket = client.bucket(settings.gcs_bucket)
+            blob = bucket.blob(filename)
+            blob.upload_from_string(file_bytes, content_type=file.content_type)
+            try:
+                blob.make_public()
+            except Exception:
+                pass # Suppress error if Uniform Bucket-Level Access enforces public access automatically
+            return blob.public_url
+            
+        # 4. Upload in a separate thread to prevent blocking the async event loop
+        try:
+            public_url = await asyncio.to_thread(_upload_to_gcs)
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to upload image to GCS: {str(e)}")
+            
+        # 5. Update user profile
+        user = await db.get(User, current_user.id)
+        user.profile_image = public_url
+        await db.commit()
+        
+        return {"url": public_url}
 
 user_service = UserService()

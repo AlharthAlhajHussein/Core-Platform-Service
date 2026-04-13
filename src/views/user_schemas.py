@@ -65,3 +65,6 @@ class UserDetailResponse(BaseModel):
     current_role: RoleEnum | None = None
     companies: list[UserCompanyResponse] = []
     sections: list[UserSectionResponse] = []
+
+class ProfileImageUploadResponse(BaseModel):
+    url: str

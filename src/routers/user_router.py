@@ -1,7 +1,7 @@
 from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.users import User
@@ -9,7 +9,8 @@ from routers.dependencies import get_db, get_current_user, is_owner
 from services.user_service import user_service
 from views.user_schemas import (
     UserCreateRequest, UserRoleUpdateRequest, UserResponse, 
-    UserDetailResponse, UserProfileUpdateRequest, UserAccountSettingsUpdateRequest
+    UserDetailResponse, UserProfileUpdateRequest, UserAccountSettingsUpdateRequest,
+    ProfileImageUploadResponse
 )
 
 router = APIRouter(
@@ -27,6 +28,19 @@ async def update_my_profile(
     Updates the authenticated user's profile information.
     """
     return await user_service.update_user_profile(db=db, current_user=current_user, update_data=request)
+
+@router.post("/me/profile/image", status_code=status.HTTP_200_OK, response_model=ProfileImageUploadResponse)
+async def upload_my_profile_image(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...)
+):
+    """
+    Uploads a new profile image to Google Cloud Storage.
+    Accepts JPG, PNG, and WebP formats up to 5MB.
+    Returns the public URL of the uploaded image.
+    """
+    return await user_service.upload_profile_image(db=db, current_user=current_user, file=file)
 
 @router.put("/me/account", status_code=status.HTTP_200_OK)
 async def update_my_account_settings(
