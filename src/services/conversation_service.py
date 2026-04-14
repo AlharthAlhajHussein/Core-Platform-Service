@@ -1,7 +1,7 @@
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 
 from models.users import User
 from models.agents import Agent
@@ -16,10 +16,19 @@ from views.conversation_schemas import ConversationStatusUpdateRequest, Conversa
 class ConversationService:
     async def list_conversations(
         self, db: AsyncSession, user: User, skip: int, limit: int, 
-        status: str | None, agent_id: UUID | None, section_id: UUID | None
+        status: str | None, agent_id: UUID | None, section_id: UUID | None,
+        platform: str | None = None, user_id: UUID | None = None
     ):
         # 1. Base query joining Conversation -> Agent -> Section
-        stmt = select(Conversation, Agent.name.label('agent_name'), Agent.id.label('agent_id'), Section.name.label('section_name'), Section.id.label('section_id'))
+        stmt = select(
+            Conversation, 
+            Agent.name.label('agent_name'), 
+            Agent.id.label('agent_id'), 
+            Agent.whatsapp_number,
+            Agent.telegram_bot_username,
+            Section.name.label('section_name'), 
+            Section.id.label('section_id')
+        )
         stmt = stmt.join(Agent, Conversation.agent_id == Agent.id)
         stmt = stmt.join(Section, Agent.section_id == Section.id)
         stmt = stmt.where(Conversation.company_id == UUID(user.current_company_id))
@@ -37,8 +46,19 @@ class ConversationService:
             stmt = stmt.where(Conversation.status == status)
         if agent_id:
             stmt = stmt.where(Conversation.agent_id == agent_id)
-        if section_id and user.current_role == RoleEnum.OWNER:
+        if section_id:
             stmt = stmt.where(Agent.section_id == section_id)
+        if platform:
+            stmt = stmt.where(Conversation.platform == platform)
+        if user_id:
+            subq_emp_agents = select(EmployeeAgent.agent_id).where(EmployeeAgent.employee_id == user_id)
+            subq_sup_sections = select(SectionUser.section_id).where(SectionUser.user_id == user_id)
+            stmt = stmt.where(
+                or_(
+                    Agent.id.in_(subq_emp_agents),
+                    Agent.section_id.in_(subq_sup_sections)
+                )
+            )
 
         # 4. Pagination & Ordering
         stmt = stmt.order_by(desc(Conversation.last_activity_at)).offset(skip).limit(limit)
@@ -69,21 +89,25 @@ class ConversationService:
         response = []
         for row in rows:
             conv = row.Conversation
+            
             item = {
                 "id": conv.id,
+                "platform": conv.platform,
                 "sender_id": conv.sender_id,
                 "status": str(conv.status) if conv.status else "UNKNOWN",
                 "language": conv.language,
                 "last_message_preview": conv.last_message_preview,
                 "last_activity_at": conv.last_activity_at,
+                "agent_id": row.agent_id,
                 "agent_name": row.agent_name,
+                "section_id": row.section_id,
+                "section_name": row.section_name,
                 "evaluation": str(conv.evaluation.value) if conv.evaluation else None,
                 "evaluation_notes": conv.evaluation_notes,
             }
             if user.current_role in [RoleEnum.OWNER, RoleEnum.SUPERVISOR]:
                 item["assigned_employees"] = employees_map.get(row.agent_id, [])
             if user.current_role == RoleEnum.OWNER:
-                item["section_name"] = row.section_name
                 item["assigned_supervisors"] = supervisors_map.get(row.section_id, [])
                 
             response.append(item)
@@ -95,7 +119,7 @@ class ConversationService:
         # We can simply wrap it in a mock list call to apply all the same enrichment rules safely.
         items = await self.list_conversations(
             db=db, user=user, skip=0, limit=1, status=None, 
-            agent_id=conv.agent_id, section_id=None
+            agent_id=conv.agent_id, section_id=None, platform=None, user_id=None
         )
         # Filter down locally to guarantee we get the right one
         for item in items:

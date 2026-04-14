@@ -7,6 +7,7 @@ from sqlalchemy.future import select
 from models import Conversation, Message, UsageLog, Agent
 from models.conversations import ConversationStatus
 from models.messages import SenderType, MessageType
+from helpers.websocket_manager import manager
 from views.interaction_schemas import InteractionSyncSchema
 
 class InteractionService:
@@ -114,6 +115,27 @@ class InteractionService:
             # and the default behavior of the `async with` block for the session
             # will be to roll back everything.
             await db.commit()
+
+            # --- Step 5: Broadcast to Connected Dashboards (WebSockets) ---
+            # We format the payload identically to how the REST API returns messages
+            user_msg_payload = {
+                "id": str(messages_to_create[0].id),
+                "sender_type": messages_to_create[0].sender_type.value,
+                "text": messages_to_create[0].text,
+                "media_url": messages_to_create[0].media_url,
+                "timestamp": messages_to_create[0].timestamp.isoformat() if messages_to_create[0].timestamp else None
+            }
+            ai_msg_payload = {
+                "id": str(messages_to_create[1].id),
+                "sender_type": messages_to_create[1].sender_type.value,
+                "text": messages_to_create[1].text,
+                "media_url": messages_to_create[1].media_url,
+                "timestamp": messages_to_create[1].timestamp.isoformat() if messages_to_create[1].timestamp else None
+            }
+            
+            # Send both messages silently to anyone currently viewing this conversation thread!
+            await manager.broadcast_to_conversation(conversation_id, {"type": "new_message", "message": user_msg_payload})
+            await manager.broadcast_to_conversation(conversation_id, {"type": "new_message", "message": ai_msg_payload})
 
         except Exception as e:
             # In case of any error, the transaction is automatically rolled back.

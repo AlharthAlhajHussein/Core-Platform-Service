@@ -6,6 +6,7 @@ from models.conversations import ConversationStatus, ConversationEvaluation
 
 class ConversationListResponse(BaseModel):
     id: UUID
+    platform: str
     sender_id: str
     status: str
     language: Optional[str] = None
@@ -15,10 +16,12 @@ class ConversationListResponse(BaseModel):
     evaluation_notes: Optional[str] = None
     
     # Enriched relational data based on RBAC rules
+    agent_id: UUID
     agent_name: str
+    section_id: UUID
     section_name: Optional[str] = None
-    assigned_supervisors: List[str] = []
-    assigned_employees: List[str] = []
+    assigned_supervisors: Optional[List[str]] = None
+    assigned_employees: Optional[List[str]] = None
 
 class MessageResponse(BaseModel):
     id: UUID
