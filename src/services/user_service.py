@@ -325,7 +325,7 @@ class UserService:
         
         def _upload_to_gcs():
             client = storage.Client(project=settings.gcs_project)
-            bucket = client.bucket(settings.gcs_bucket)
+            bucket = client.bucket(settings.gcs_bucket2)
             blob = bucket.blob(filename)
             blob.upload_from_string(file_bytes, content_type=file.content_type)
             try:

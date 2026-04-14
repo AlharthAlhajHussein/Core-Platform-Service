@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -11,6 +12,7 @@ from models.employee_agents import EmployeeAgent
 from models.company_users import CompanyUser, RoleEnum
 from models.conversations import Conversation
 from models.messages import Message
+from helpers.gcs_helper import generate_signed_url
 from views.conversation_schemas import ConversationStatusUpdateRequest, ConversationEvaluationRequest
 
 class ConversationService:
@@ -131,11 +133,19 @@ class ConversationService:
         stmt = select(Message).where(Message.conversation_id == conv_id).order_by(Message.timestamp.asc())
         result = await db.execute(stmt)
         messages = result.scalars().all()
+        
+        # Concurrently generate signed URLs in separate threads to prevent blocking the event loop
+        signed_url_tasks = [
+            asyncio.to_thread(generate_signed_url, m.media_url)
+            for m in messages
+        ]
+        signed_urls = await asyncio.gather(*signed_url_tasks)
+        
         return [{
             "id": m.id, "sender_type": str(m.sender_type), 
-            "text": m.text, "media_url": m.media_url,
+            "text": m.text, "media_url": signed_url,
             "timestamp": m.timestamp
-        } for m in messages]
+        } for m, signed_url in zip(messages, signed_urls)]
 
     async def update_status(self, db: AsyncSession, conv: Conversation, update_data: ConversationStatusUpdateRequest):
         conv.status = update_data.status

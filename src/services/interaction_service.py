@@ -8,6 +8,7 @@ from models import Conversation, Message, UsageLog, Agent
 from models.conversations import ConversationStatus
 from models.messages import SenderType, MessageType
 from helpers.websocket_manager import manager
+from helpers.gcs_helper import generate_signed_url
 from views.interaction_schemas import InteractionSyncSchema
 
 class InteractionService:
@@ -122,14 +123,14 @@ class InteractionService:
                 "id": str(messages_to_create[0].id),
                 "sender_type": messages_to_create[0].sender_type.value,
                 "text": messages_to_create[0].text,
-                "media_url": messages_to_create[0].media_url,
+                "media_url": generate_signed_url(messages_to_create[0].media_url),
                 "timestamp": messages_to_create[0].timestamp.isoformat() if messages_to_create[0].timestamp else None
             }
             ai_msg_payload = {
                 "id": str(messages_to_create[1].id),
                 "sender_type": messages_to_create[1].sender_type.value,
                 "text": messages_to_create[1].text,
-                "media_url": messages_to_create[1].media_url,
+                "media_url": generate_signed_url(messages_to_create[1].media_url),
                 "timestamp": messages_to_create[1].timestamp.isoformat() if messages_to_create[1].timestamp else None
             }
             

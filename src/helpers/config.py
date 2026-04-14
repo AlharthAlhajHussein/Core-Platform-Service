@@ -29,7 +29,8 @@ class Settings(BaseSettings):
 
     # GCS Configuration
     gcs_project: str = "agents-platform-490417"
-    gcs_bucket: str = "agents-platform-bucket-2"
+    gcs_bucket1: str = "agent-platform-bucket-1"
+    gcs_bucket2: str = "agents-platform-bucket-2"
     
     allowed_types: list[str] = ["image/jpeg", "image/png", "image/webp"]
     
@@ -47,6 +48,9 @@ class Settings(BaseSettings):
     gateway_service_url: str | None = None
     telegram_webhook_secret: str | None = None
 
+    # Add your service account email here
+    signer_email: str | None = None
+    
     model_config = SettingsConfigDict(env_file=env_path)
 
 
