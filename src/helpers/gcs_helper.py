@@ -1,3 +1,5 @@
+import google.auth
+from google.auth import impersonated_credentials
 from datetime import timedelta
 from google.cloud import storage
 from helpers.config import settings
@@ -29,15 +31,20 @@ def generate_signed_url(media_url: str | None, expiration_minutes: int = 60) -> 
         elif media_url.startswith("http"):
             return media_url
             
-        client = storage.Client(project=settings.gcs_project)
+        default_creds, _ = google.auth.default()
+        impersonated_creds = impersonated_credentials.Credentials(
+            source_credentials=default_creds,
+            target_principal=settings.signer_email,
+            target_scopes=['https://www.googleapis.com/auth/cloud-platform']
+        )
+        client = storage.Client(project=settings.gcs_project, credentials=impersonated_creds)
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
         
         return blob.generate_signed_url(
             version="v4",
             expiration=timedelta(minutes=expiration_minutes),
-            method="GET",
-            service_account_email=settings.signer_email
+            method="GET"
         )
     except Exception as e:
         logger.error(f"Failed to generate signed URL for {media_url}: {e}")
